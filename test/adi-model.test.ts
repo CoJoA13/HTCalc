@@ -351,6 +351,32 @@ describe("ADI warning and confidence rules", () => {
     expect(result.confidence).toBe("red");
   });
 
+  it("uses yellow confidence for uncontrolled non-air atmosphere risk", () => {
+    const result = recommendAdiProcess({
+      ...baseInput,
+      composition: {
+        ...baseInput.composition,
+        Cu: 1,
+        Ni: 1.5,
+        Mo: 0.2,
+      },
+      geometry: {
+        maxSectionMm: 20,
+        minSectionMm: 15,
+        criticalSectionMm: 10,
+      },
+      equipment: {
+        ...baseInput.equipment,
+        carbonPotentialControl: false,
+      },
+    });
+
+    expect(result.warnings).toContain(
+      "Atmosphere risk: air or uncontrolled atmosphere can scale or decarburize the surface.",
+    );
+    expect(result.confidence).toBe("yellow");
+  });
+
   it("degrades confidence for poor nodularity", () => {
     const result = recommendAdiProcess({
       ...baseInput,

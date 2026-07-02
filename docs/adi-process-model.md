@@ -75,9 +75,9 @@ Austenitizing starts from grade:
 T_gamma_base_C = 925 - 12*(gradeIndex - 1)
 ```
 
-The model adjusts that base by adding 10 C for each percent Si above 2.5, adding 5 C for section factor above 1, adding 10 C for a ferritic starting matrix, adding 15 C when carbides are present, and subtracting 10 C when dimensional growth is sensitive. The result is clamped to 840-950 C.
+The model adjusts that base by adding 10 C for each percent Si above 2.5, adding 5 C per unit of section factor above 1, adding 10 C for a ferritic starting matrix, adding 15 C when carbides are present, and subtracting 10 C when dimensional growth is sensitive. The result is clamped to 840-950 C.
 
-Austenitizing soak starts at 60 minutes after the critical-section core reaches temperature. The model adds 20 minutes for section factor above 1, 20 minutes for a ferritic starting matrix, 15 minutes when Si is above 3.0%, 15 minutes when Ni + Cu + Mo + Mn is above 2.0%, and 30 minutes when carbides are present. The result is clamped to 45-180 minutes.
+Austenitizing soak starts at 60 minutes after the critical-section core reaches temperature. The model adds 20 minutes per unit of section factor above 1, 20 minutes for a ferritic starting matrix, 15 minutes when Si is above 3.0%, 15 minutes when Ni + Cu + Mo + Mn is above 2.0%, and 30 minutes when carbides are present. The result is clamped to 45-180 minutes.
 
 Austempering starts from grade base temperatures:
 

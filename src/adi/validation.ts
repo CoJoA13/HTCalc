@@ -75,6 +75,7 @@ export function buildWarningsAndConfidence(
     warnings.push(
       "Atmosphere risk: air or uncontrolled atmosphere can scale or decarburize the surface.",
     );
+    yellowFlag = true;
     if (scores.atmosphereRisk === 3) {
       redFlag = true;
     }

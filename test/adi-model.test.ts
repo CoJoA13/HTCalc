@@ -247,3 +247,83 @@ describe("ADI recommendation model", () => {
     );
   });
 });
+
+describe("ADI warning and confidence rules", () => {
+  it("warns when a heavy section lacks enough austemperability", () => {
+    const result = recommendAdiProcess({
+      ...baseInput,
+      composition: {
+        ...baseInput.composition,
+        Cu: 0.1,
+        Ni: 0.1,
+        Mo: 0.02,
+        Mn: 0.15,
+      },
+      geometry: {
+        maxSectionMm: 90,
+        minSectionMm: 20,
+        criticalSectionMm: 80,
+      },
+      equipment: {
+        ...baseInput.equipment,
+        quenchTransferTimeSec: 18,
+        bathAgitation: "fair",
+      },
+    });
+
+    expect(result.warnings).toContain(
+      "Pearlite risk: austemperability is low for the selected critical section and transfer conditions.",
+    );
+    expect(result.confidence).toBe("red");
+  });
+
+  it("warns when Mn, Mo, and Cr create high carbide segregation risk", () => {
+    const result = recommendAdiProcess({
+      ...baseInput,
+      composition: {
+        ...baseInput.composition,
+        Mn: 0.65,
+        Mo: 0.35,
+        Cr: 0.2,
+      },
+    });
+
+    expect(result.warnings).toContain(
+      "High carbide/segregation risk: Mn, Mo, Cr, and section effects may produce cell-boundary carbides or martensite.",
+    );
+    expect(result.austemper.processingWindowStatus).toBe("narrow");
+  });
+
+  it("warns for air furnaces and uncontrolled atmosphere", () => {
+    const result = recommendAdiProcess({
+      ...baseInput,
+      equipment: {
+        ...baseInput.equipment,
+        furnaceType: "air",
+        atmosphereType: "air",
+        carbonPotentialControl: false,
+      },
+    });
+
+    expect(result.warnings).toContain(
+      "Atmosphere risk: air or uncontrolled atmosphere can scale or decarburize the surface.",
+    );
+    expect(result.confidence).toBe("red");
+  });
+
+  it("degrades confidence for poor nodularity", () => {
+    const result = recommendAdiProcess({
+      ...baseInput,
+      microstructure: {
+        ...baseInput.microstructure,
+        noduleCountPerMm2: 50,
+        nodularityPercent: 72,
+      },
+    });
+
+    expect(result.warnings).toContain(
+      "Graphite quality risk: low nodule count or poor nodularity can make the recommendation unreliable.",
+    );
+    expect(result.confidence).toBe("red");
+  });
+});

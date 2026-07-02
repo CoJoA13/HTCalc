@@ -349,14 +349,15 @@ export function recommendAdiProcess(input: AdiProcessInput): AdiProcessRecommend
   const austemperHoldMax =
     austemperHoldMin *
     (carbideSegregationRisk > THRESHOLDS.highCarbideSegregationRisk ? 1.3 : 1.8);
-  const scores = roundScores({
+  const rawScores: AdiScores = {
     sectionFactor: sectionFactor(input),
     austemperabilityIndex: calculateAustemperabilityIndex(input),
     requiredAustemperabilityIndex: requiredAiForSection(input.geometry.criticalSectionMm),
     carbideSegregationRisk,
     atmosphereRisk: calculateAtmosphereRisk(input),
-  });
-  const assessment = buildWarningsAndConfidence(input, scores, {
+  };
+  const scores = roundScores(rawScores);
+  const assessment = buildWarningsAndConfidence(input, rawScores, {
     austemperHoldMin,
     austemperHoldMax,
   });

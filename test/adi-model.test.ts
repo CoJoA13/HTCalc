@@ -295,6 +295,25 @@ describe("ADI warning and confidence rules", () => {
     expect(result.confidence).toBe("red");
   });
 
+  it("uses unrounded carbide segregation risk for high-risk warnings", () => {
+    const result = recommendAdiProcess({
+      ...baseInput,
+      composition: {
+        ...baseInput.composition,
+        Mo: 0.4274,
+      },
+    });
+
+    expect(result.scores.carbideSegregationRisk).toBe(
+      adi.THRESHOLDS.highCarbideSegregationRisk,
+    );
+    expect(result.austemper.processingWindowStatus).toBe("narrow");
+    expect(result.warnings).toContain(
+      "High carbide/segregation risk: Mn, Mo, Cr, and section effects may produce cell-boundary carbides or martensite.",
+    );
+    expect(result.confidence).not.toBe("green");
+  });
+
   it("returns green confidence when no warning rules apply", () => {
     const result = recommendAdiProcess({
       ...baseInput,
@@ -346,5 +365,80 @@ describe("ADI warning and confidence rules", () => {
       "Graphite quality risk: low nodule count or poor nodularity can make the recommendation unreliable.",
     );
     expect(result.confidence).toBe("red");
+  });
+});
+
+describe("ADI validation checks", () => {
+  it("adds surface traverse checks for atmosphere risk or fatigue priority", () => {
+    const atmosphereRisk = recommendAdiProcess({
+      ...baseInput,
+      equipment: {
+        ...baseInput.equipment,
+        carbonPotentialControl: false,
+      },
+    });
+    const fatigue = recommendAdiProcess({
+      ...baseInput,
+      target: {
+        ...baseInput.target,
+        priority: "fatigue",
+      },
+    });
+
+    expect(atmosphereRisk.validationChecks).toContain(
+      "Surface hardness or microhardness traverse to verify no decarburized or carburized layer.",
+    );
+    expect(fatigue.validationChecks).toContain(
+      "Surface hardness or microhardness traverse to verify no decarburized or carburized layer.",
+    );
+  });
+
+  it("adds impact testing for impact priority", () => {
+    const result = recommendAdiProcess({
+      ...baseInput,
+      target: {
+        ...baseInput.target,
+        priority: "impact",
+      },
+    });
+
+    expect(result.validationChecks).toContain(
+      "Impact testing for the intended service temperature.",
+    );
+  });
+
+  it("adds dimensional growth checks for sensitive parts", () => {
+    const result = recommendAdiProcess({
+      ...baseInput,
+      target: {
+        ...baseInput.target,
+        dimensionalGrowthSensitive: true,
+      },
+    });
+
+    expect(result.validationChecks).toContain(
+      "Dimensional growth measurement on representative parts or coupons.",
+    );
+  });
+
+  it("adds instrumented trial checks for heavy critical sections", () => {
+    const result = recommendAdiProcess({
+      ...baseInput,
+      geometry: {
+        maxSectionMm: 70,
+        minSectionMm: 20,
+        criticalSectionMm: 60,
+      },
+      composition: {
+        ...baseInput.composition,
+        Cu: 2,
+        Ni: 2,
+        Mo: 0.6,
+      },
+    });
+
+    expect(result.validationChecks).toContain(
+      "Instrumented trial coupon or core-temperature verification for the critical section.",
+    );
   });
 });

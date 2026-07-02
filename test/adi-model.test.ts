@@ -93,3 +93,40 @@ describe("recommendAdiProcess", () => {
     expect(result.expectedGrade).toBe("150-110-07");
   });
 });
+
+describe("ADI recommendation model", () => {
+  it("uses higher austempering temperatures for ductile grades than high-strength grades", () => {
+    const ductile = recommendAdiProcess({
+      ...baseInput,
+      target: { grade: "110-70-11", priority: "ductility" },
+    });
+    const highStrength = recommendAdiProcess({
+      ...baseInput,
+      target: { grade: "200-155-02", priority: "strength" },
+    });
+
+    expect(ductile.austemper.temperature.nominalC).toBeGreaterThan(
+      highStrength.austemper.temperature.nominalC,
+    );
+    expect(highStrength.austemper.holdAfterCoreAtTemp.nominalMin).toBeGreaterThan(
+      ductile.austemper.holdAfterCoreAtTemp.nominalMin,
+    );
+  });
+
+  it("keeps nominal temperatures inside their recommended ranges", () => {
+    const result = recommendAdiProcess(baseInput);
+
+    expect(result.austenitize.temperature.nominalC).toBeGreaterThanOrEqual(
+      result.austenitize.temperature.minC,
+    );
+    expect(result.austenitize.temperature.nominalC).toBeLessThanOrEqual(
+      result.austenitize.temperature.maxC,
+    );
+    expect(result.austemper.temperature.nominalC).toBeGreaterThanOrEqual(
+      result.austemper.temperature.minC,
+    );
+    expect(result.austemper.temperature.nominalC).toBeLessThanOrEqual(
+      result.austemper.temperature.maxC,
+    );
+  });
+});

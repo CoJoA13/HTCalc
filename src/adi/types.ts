@@ -93,17 +93,17 @@ export interface AdiProcessInput {
 }
 
 export interface AstmGradeData {
-  grade: AstmA897Grade;
-  gradeIndex: 1 | 2 | 3 | 4 | 5 | 6;
-  tensileStrengthKsi: number;
-  yieldStrengthKsi: number;
-  elongationPercent: number;
-  typicalHardnessHbw: string;
-  processDirection: string;
-  austenitizeRangeC: [number, number];
-  austemperRangeC: [number, number];
-  soakRangeMin: [number, number];
-  holdRangeMin: [number, number];
+  readonly grade: AstmA897Grade;
+  readonly gradeIndex: 1 | 2 | 3 | 4 | 5 | 6;
+  readonly tensileStrengthKsi: number;
+  readonly yieldStrengthKsi: number;
+  readonly elongationPercent: number;
+  readonly typicalHardnessHbw: string;
+  readonly processDirection: string;
+  readonly austenitizeRangeC: readonly [number, number];
+  readonly austemperRangeC: readonly [number, number];
+  readonly soakRangeMin: readonly [number, number];
+  readonly holdRangeMin: readonly [number, number];
 }
 
 export interface TemperatureWindow {
@@ -123,7 +123,7 @@ export interface TimeWindow {
 
 export interface CarbonPotentialRecommendation {
   category: "low" | "medium" | "high" | "equipment-calibrated";
-  rangeCarbonEquivalentPercent?: [number, number];
+  rangeCarbonEquivalentPercent?: readonly [number, number];
   guidance: string;
 }
 

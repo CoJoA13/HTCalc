@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as adi from "../src/adi/index.js";
 import { ASTM_A897_GRADES, getGradeData, recommendAdiProcess } from "../src/adi/index.js";
 
 const baseInput = {
@@ -41,6 +42,10 @@ const baseInput = {
 } as const;
 
 describe("ASTM A897 grade data", () => {
+  it("exports process thresholds from the public API", () => {
+    expect(adi.THRESHOLDS.heavySectionMm).toBe(50);
+  });
+
   it("orders grades from ductile to high-strength behavior", () => {
     expect(ASTM_A897_GRADES.map((grade) => grade.grade)).toEqual([
       "110-70-11",
@@ -60,6 +65,24 @@ describe("ASTM A897 grade data", () => {
       yieldStrengthKsi: 155,
       elongationPercent: 2,
     });
+  });
+
+  it("prevents consumers from mutating canonical grade metadata", () => {
+    const mutableGrades = ASTM_A897_GRADES as unknown as unknown[];
+    const mutableGrade = getGradeData("200-155-02") as unknown as {
+      tensileStrengthKsi: number;
+      austenitizeRangeC: number[];
+    };
+
+    expect(() => {
+      mutableGrades.push({ grade: "mutated" });
+    }).toThrow(TypeError);
+    expect(() => {
+      mutableGrade.tensileStrengthKsi = 999;
+    }).toThrow(TypeError);
+    expect(() => {
+      mutableGrade.austenitizeRangeC[0] = 0;
+    }).toThrow(TypeError);
   });
 });
 

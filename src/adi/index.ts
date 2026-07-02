@@ -1,4 +1,4 @@
-export { ASTM_A897_GRADES, getGradeData } from "./data.js";
+export { ASTM_A897_GRADES, THRESHOLDS, getGradeData } from "./data.js";
 export type * from "./types.js";
 
 import type { AdiProcessInput } from "./types.js";

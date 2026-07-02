@@ -19,6 +19,51 @@ const AUSTEMPER_BASE_TEMPERATURE_C = {
   6: 275,
 } as const satisfies Record<AstmGradeData["gradeIndex"], number>;
 
+const COMPOSITION_FIELDS = ["C", "Si", "Mn", "Cu", "Ni", "Mo", "Cr", "Mg", "P", "S"] as const;
+
+function invalidInput(fieldPath: string, requirement: string): RangeError {
+  return new RangeError(`Invalid ADI input: ${fieldPath} must be ${requirement}`);
+}
+
+function assertFiniteNonNegative(value: number, fieldPath: string): void {
+  if (!Number.isFinite(value) || value < 0) {
+    throw invalidInput(fieldPath, "a finite non-negative number");
+  }
+}
+
+function assertFinitePositive(value: number, fieldPath: string): void {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw invalidInput(fieldPath, "a finite positive number");
+  }
+}
+
+function validateAdiProcessInput(input: AdiProcessInput): void {
+  for (const field of COMPOSITION_FIELDS) {
+    assertFiniteNonNegative(input.composition[field], `composition.${field}`);
+  }
+
+  assertFinitePositive(input.geometry.maxSectionMm, "geometry.maxSectionMm");
+  assertFinitePositive(input.geometry.minSectionMm, "geometry.minSectionMm");
+  assertFinitePositive(input.geometry.criticalSectionMm, "geometry.criticalSectionMm");
+
+  if (input.geometry.estimatedMassKg !== undefined) {
+    assertFinitePositive(input.geometry.estimatedMassKg, "geometry.estimatedMassKg");
+  }
+
+  if (input.geometry.surfaceAreaToVolumeRatio !== undefined) {
+    assertFinitePositive(
+      input.geometry.surfaceAreaToVolumeRatio,
+      "geometry.surfaceAreaToVolumeRatio",
+    );
+  }
+
+  assertFiniteNonNegative(
+    input.equipment.quenchTransferTimeSec,
+    "equipment.quenchTransferTimeSec",
+  );
+  assertFiniteNonNegative(input.equipment.bathUniformityC, "equipment.bathUniformityC");
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
@@ -227,7 +272,6 @@ function calculateAustemperTemperatureC(
 function calculateAustemperHoldMin(
   input: AdiProcessInput,
   austemperTemperatureC: number,
-  carbideSegregationRisk: number,
 ): number {
   const sectionMultiplier = Math.max(1, sectionFactor(input));
   const sectionReactionMultiplier = 1 + 0.25 * Math.max(0, sectionMultiplier - 1);
@@ -284,6 +328,8 @@ function roundScores(scores: AdiScores): AdiScores {
 }
 
 export function recommendAdiProcess(input: AdiProcessInput): AdiProcessRecommendation {
+  validateAdiProcessInput(input);
+
   const grade = getGradeData(input.target.grade);
   const carbideSegregationRisk = calculateCarbideSegregationRisk(input);
   const austenitizeTemperatureC = calculateAustenitizeTemperatureC(
@@ -299,7 +345,6 @@ export function recommendAdiProcess(input: AdiProcessInput): AdiProcessRecommend
   const austemperHoldMin = calculateAustemperHoldMin(
     input,
     austemperTemperatureC,
-    carbideSegregationRisk,
   );
   const austemperHoldMax =
     austemperHoldMin *

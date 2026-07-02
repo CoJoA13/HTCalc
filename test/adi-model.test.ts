@@ -95,6 +95,72 @@ describe("recommendAdiProcess", () => {
 });
 
 describe("ADI recommendation model", () => {
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects invalid critical section value %s",
+    (criticalSectionMm) => {
+      expect(() =>
+        recommendAdiProcess({
+          ...baseInput,
+          geometry: {
+            ...baseInput.geometry,
+            criticalSectionMm,
+          },
+        }),
+      ).toThrow(RangeError);
+      expect(() =>
+        recommendAdiProcess({
+          ...baseInput,
+          geometry: {
+            ...baseInput.geometry,
+            criticalSectionMm,
+          },
+        }),
+      ).toThrow(/geometry\.criticalSectionMm/);
+    },
+  );
+
+  it("rejects invalid negative composition values with the field path", () => {
+    expect(() =>
+      recommendAdiProcess({
+        ...baseInput,
+        composition: {
+          ...baseInput.composition,
+          Mo: -0.01,
+        },
+      }),
+    ).toThrow(RangeError);
+    expect(() =>
+      recommendAdiProcess({
+        ...baseInput,
+        composition: {
+          ...baseInput.composition,
+          Mo: -0.01,
+        },
+      }),
+    ).toThrow(/composition\.Mo/);
+  });
+
+  it("allows zero bath uniformity and rejects negative bath uniformity", () => {
+    expect(() =>
+      recommendAdiProcess({
+        ...baseInput,
+        equipment: {
+          ...baseInput.equipment,
+          bathUniformityC: 0,
+        },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      recommendAdiProcess({
+        ...baseInput,
+        equipment: {
+          ...baseInput.equipment,
+          bathUniformityC: -1,
+        },
+      }),
+    ).toThrow(/equipment\.bathUniformityC/);
+  });
+
   it("uses higher austempering temperatures for ductile grades than high-strength grades", () => {
     const ductile = recommendAdiProcess({
       ...baseInput,
@@ -127,6 +193,23 @@ describe("ADI recommendation model", () => {
     );
     expect(result.austemper.temperature.nominalC).toBeLessThanOrEqual(
       result.austemper.temperature.maxC,
+    );
+  });
+
+  it("keeps nominal time windows inside their recommended ranges", () => {
+    const result = recommendAdiProcess(baseInput);
+
+    expect(result.austenitize.soakAfterCoreAtTemp.nominalMin).toBeGreaterThanOrEqual(
+      result.austenitize.soakAfterCoreAtTemp.minMin,
+    );
+    expect(result.austenitize.soakAfterCoreAtTemp.nominalMin).toBeLessThanOrEqual(
+      result.austenitize.soakAfterCoreAtTemp.maxMin,
+    );
+    expect(result.austemper.holdAfterCoreAtTemp.nominalMin).toBeGreaterThanOrEqual(
+      result.austemper.holdAfterCoreAtTemp.minMin,
+    );
+    expect(result.austemper.holdAfterCoreAtTemp.nominalMin).toBeLessThanOrEqual(
+      result.austemper.holdAfterCoreAtTemp.maxMin,
     );
   });
 

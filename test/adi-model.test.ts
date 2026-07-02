@@ -277,7 +277,7 @@ describe("ADI warning and confidence rules", () => {
     expect(result.confidence).toBe("red");
   });
 
-  it("warns when Mn, Mo, and Cr create high carbide segregation risk", () => {
+  it("marks the processing window invalid for extreme carbide segregation risk", () => {
     const result = recommendAdiProcess({
       ...baseInput,
       composition: {
@@ -291,7 +291,28 @@ describe("ADI warning and confidence rules", () => {
     expect(result.warnings).toContain(
       "High carbide/segregation risk: Mn, Mo, Cr, and section effects may produce cell-boundary carbides or martensite.",
     );
-    expect(result.austemper.processingWindowStatus).toBe("narrow");
+    expect(result.austemper.processingWindowStatus).toBe("invalid");
+    expect(result.confidence).toBe("red");
+  });
+
+  it("returns green confidence when no warning rules apply", () => {
+    const result = recommendAdiProcess({
+      ...baseInput,
+      composition: {
+        ...baseInput.composition,
+        Cu: 1,
+        Ni: 1.5,
+        Mo: 0.2,
+      },
+      geometry: {
+        maxSectionMm: 20,
+        minSectionMm: 15,
+        criticalSectionMm: 10,
+      },
+    });
+
+    expect(result.warnings).toEqual([]);
+    expect(result.confidence).toBe("green");
   });
 
   it("warns for air furnaces and uncontrolled atmosphere", () => {

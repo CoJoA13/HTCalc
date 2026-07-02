@@ -25,7 +25,7 @@ export function buildWarningsAndConfidence(
 ): Assessment {
   const warnings: string[] = [];
   let redFlag = false;
-  let yellowFlag = true;
+  let yellowFlag = false;
 
   if (scores.austemperabilityIndex < scores.requiredAustemperabilityIndex) {
     warnings.push(
@@ -160,7 +160,6 @@ function classifyProcessingWindow(
 
   if (
     scores.carbideSegregationRisk > THRESHOLDS.extremeCarbideSegregationRisk &&
-    scores.sectionFactor > Math.sqrt(THRESHOLDS.heavySectionMm / 25) &&
     widthRatio < 1.35
   ) {
     return "invalid";

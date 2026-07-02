@@ -6,7 +6,7 @@
   "main": "dist/adi/index.js",
   "types": "dist/adi/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },

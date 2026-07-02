@@ -161,6 +161,54 @@ describe("ADI recommendation model", () => {
     ).toThrow(/equipment\.bathUniformityC/);
   });
 
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects invalid nodule count value %s",
+    (noduleCountPerMm2) => {
+      expect(() =>
+        recommendAdiProcess({
+          ...baseInput,
+          microstructure: {
+            ...baseInput.microstructure,
+            noduleCountPerMm2,
+          },
+        }),
+      ).toThrow(RangeError);
+      expect(() =>
+        recommendAdiProcess({
+          ...baseInput,
+          microstructure: {
+            ...baseInput.microstructure,
+            noduleCountPerMm2,
+          },
+        }),
+      ).toThrow(/microstructure\.noduleCountPerMm2/);
+    },
+  );
+
+  it.each([-1, 101, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects invalid nodularity percent value %s",
+    (nodularityPercent) => {
+      expect(() =>
+        recommendAdiProcess({
+          ...baseInput,
+          microstructure: {
+            ...baseInput.microstructure,
+            nodularityPercent,
+          },
+        }),
+      ).toThrow(RangeError);
+      expect(() =>
+        recommendAdiProcess({
+          ...baseInput,
+          microstructure: {
+            ...baseInput.microstructure,
+            nodularityPercent,
+          },
+        }),
+      ).toThrow(/microstructure\.nodularityPercent/);
+    },
+  );
+
   it("uses higher austempering temperatures for ductile grades than high-strength grades", () => {
     const ductile = recommendAdiProcess({
       ...baseInput,

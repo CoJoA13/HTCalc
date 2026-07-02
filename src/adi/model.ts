@@ -37,6 +37,12 @@ function assertFinitePositive(value: number, fieldPath: string): void {
   }
 }
 
+function assertFinitePercent(value: number, fieldPath: string): void {
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    throw invalidInput(fieldPath, "a finite number from 0 to 100 inclusive");
+  }
+}
+
 function validateAdiProcessInput(input: AdiProcessInput): void {
   for (const field of COMPOSITION_FIELDS) {
     assertFiniteNonNegative(input.composition[field], `composition.${field}`);
@@ -62,6 +68,20 @@ function validateAdiProcessInput(input: AdiProcessInput): void {
     "equipment.quenchTransferTimeSec",
   );
   assertFiniteNonNegative(input.equipment.bathUniformityC, "equipment.bathUniformityC");
+
+  if (input.microstructure.noduleCountPerMm2 !== undefined) {
+    assertFiniteNonNegative(
+      input.microstructure.noduleCountPerMm2,
+      "microstructure.noduleCountPerMm2",
+    );
+  }
+
+  if (input.microstructure.nodularityPercent !== undefined) {
+    assertFinitePercent(
+      input.microstructure.nodularityPercent,
+      "microstructure.nodularityPercent",
+    );
+  }
 }
 
 function clamp(value: number, min: number, max: number): number {

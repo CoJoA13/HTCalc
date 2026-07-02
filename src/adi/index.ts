@@ -1,12 +1,9 @@
-export interface AdiRecommendationInput {
-  target: {
-    grade: string;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
+export { ASTM_A897_GRADES, getGradeData } from "./data.js";
+export type * from "./types.js";
 
-export function recommendAdiProcess(input: AdiRecommendationInput) {
+import type { AdiProcessInput } from "./types.js";
+
+export function recommendAdiProcess(input: AdiProcessInput) {
   return {
     expectedGrade: input.target.grade,
   };

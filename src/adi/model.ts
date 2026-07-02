@@ -148,9 +148,8 @@ function calculateAtmosphereRisk(input: AdiProcessInput): 0 | 1 | 2 | 3 {
 function calculateAustenitizeTemperatureC(
   input: AdiProcessInput,
   grade: AstmGradeData,
-  carbideSegregationRisk: number,
 ): number {
-  const { composition, geometry, microstructure, target } = input;
+  const { composition, microstructure, target } = input;
   let temperatureC = 925 - 12 * (grade.gradeIndex - 1);
 
   temperatureC += 10 * Math.max(0, composition.Si - 2.5);
@@ -160,11 +159,8 @@ function calculateAustenitizeTemperatureC(
     temperatureC += 10;
   }
 
-  if (
-    microstructure.carbidesPresent ||
-    carbideSegregationRisk > THRESHOLDS.highCarbideSegregationRisk
-  ) {
-    temperatureC += microstructure.carbidesPresent ? 15 : 10;
+  if (microstructure.carbidesPresent) {
+    temperatureC += 15;
   }
 
   if (target.dimensionalGrowthSensitive) {
@@ -174,10 +170,7 @@ function calculateAustenitizeTemperatureC(
   return clamp(temperatureC, 840, 950);
 }
 
-function calculateAustenitizeSoakMin(
-  input: AdiProcessInput,
-  carbideSegregationRisk: number,
-): number {
+function calculateAustenitizeSoakMin(input: AdiProcessInput): number {
   const { composition, microstructure } = input;
   const alloyTotal =
     composition.Ni + composition.Cu + composition.Mo + composition.Mn;
@@ -197,8 +190,6 @@ function calculateAustenitizeSoakMin(
 
   if (microstructure.carbidesPresent) {
     soakMin += 30;
-  } else if (carbideSegregationRisk > THRESHOLDS.highCarbideSegregationRisk) {
-    soakMin += 20;
   }
 
   return clamp(soakMin, 45, 180);
@@ -298,9 +289,8 @@ export function recommendAdiProcess(input: AdiProcessInput): AdiProcessRecommend
   const austenitizeTemperatureC = calculateAustenitizeTemperatureC(
     input,
     grade,
-    carbideSegregationRisk,
   );
-  const austenitizeSoakMin = calculateAustenitizeSoakMin(input, carbideSegregationRisk);
+  const austenitizeSoakMin = calculateAustenitizeSoakMin(input);
   const austemperTemperatureC = calculateAustemperTemperatureC(
     input,
     grade,

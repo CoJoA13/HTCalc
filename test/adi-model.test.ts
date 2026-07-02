@@ -129,4 +129,38 @@ describe("ADI recommendation model", () => {
       result.austemper.temperature.maxC,
     );
   });
+
+  it("does not use carbide segregation risk for austenitize carbide-present adjustments", () => {
+    const highSegregationRiskInput = {
+      ...baseInput,
+      composition: {
+        ...baseInput.composition,
+        Mn: 0.5,
+        Mo: 0.5,
+        Cr: 0.2,
+      },
+      microstructure: {
+        ...baseInput.microstructure,
+        carbidesPresent: false,
+      },
+    };
+    const withoutCarbides = recommendAdiProcess(highSegregationRiskInput);
+    const withCarbides = recommendAdiProcess({
+      ...highSegregationRiskInput,
+      microstructure: {
+        ...highSegregationRiskInput.microstructure,
+        carbidesPresent: true,
+      },
+    });
+
+    expect(withoutCarbides.scores.carbideSegregationRisk).toBeGreaterThan(
+      adi.THRESHOLDS.highCarbideSegregationRisk,
+    );
+    expect(withCarbides.austenitize.temperature.nominalC).toBe(
+      withoutCarbides.austenitize.temperature.nominalC + 15,
+    );
+    expect(withCarbides.austenitize.soakAfterCoreAtTemp.nominalMin).toBe(
+      withoutCarbides.austenitize.soakAfterCoreAtTemp.nominalMin + 30,
+    );
+  });
 });

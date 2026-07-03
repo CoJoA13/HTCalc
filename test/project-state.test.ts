@@ -3,6 +3,10 @@ import {
   DEFAULT_ADI_MODEL_CALIBRATION,
   recommendAdiProcess,
 } from "../src/adi/index.js";
+import type {
+  MartemperingInput,
+  SteelAustemperingInput,
+} from "../src/steel/index.js";
 import {
   createProjectState,
   parseProjectState,
@@ -48,6 +52,84 @@ const adiInput = {
   },
 } as const;
 
+const steelAustemperingInput: SteelAustemperingInput = {
+  composition: {
+    C: 0.42,
+    Mn: 0.85,
+    Si: 1.5,
+    Ni: 0.2,
+    Cr: 0.8,
+    Mo: 0.25,
+    V: 0.02,
+    Cu: 0.15,
+    B: 0.0007,
+  },
+  geometry: {
+    maxSectionMm: 45,
+    minSectionMm: 12,
+    criticalSectionMm: 32,
+    estimatedMassKg: 22,
+  },
+  startingCondition: "normalized",
+  target: {
+    priority: "toughness",
+    targetHardnessHrc: 42,
+  },
+  equipment: {
+    furnaceType: "controlled-atmosphere",
+    atmosphereType: "endothermic-neutral",
+    carbonProtection: true,
+    quenchMedium: "salt",
+    agitation: "good",
+    transferTimeSec: 7,
+    bathUniformityC: 5,
+  },
+  austemper: {
+    bainiteTarget: "lower",
+    bathMedium: "salt",
+  },
+};
+
+const martemperingInput: MartemperingInput = {
+  composition: {
+    C: 0.45,
+    Mn: 0.8,
+    Si: 0.25,
+    Ni: 0.2,
+    Cr: 0.9,
+    Mo: 0.2,
+    V: 0.02,
+    Cu: 0.15,
+    B: 0.0005,
+  },
+  geometry: {
+    maxSectionMm: 38,
+    minSectionMm: 12,
+    criticalSectionMm: 32,
+    estimatedMassKg: 18,
+  },
+  startingCondition: "normalized",
+  target: {
+    priority: "distortion",
+    targetHardnessHrc: 44,
+  },
+  equipment: {
+    furnaceType: "controlled-atmosphere",
+    atmosphereType: "endothermic-neutral",
+    carbonProtection: true,
+    quenchMedium: "salt",
+    agitation: "good",
+    transferTimeSec: 6,
+    bathUniformityC: 5,
+  },
+  martemper: {
+    bathMedium: "salt",
+    equalizationStrategy: "section-equalized",
+    temperHoldMin: 120,
+    temperCount: 1,
+  },
+};
+
 const recommendation = recommendAdiProcess(adiInput, DEFAULT_ADI_MODEL_CALIBRATION);
 
 const metadata = {
@@ -67,6 +149,23 @@ const validationChecklist = {
   ],
 };
 
+const validationChecklists = {
+  adi: validationChecklist,
+  "steel-austempering": {
+    items: [
+      {
+        id: "confirm-jominy-data",
+        label: "Validate hardenability with Jominy data.",
+        checked: false,
+        notes: "",
+      },
+    ],
+  },
+  martempering: {
+    items: [],
+  },
+};
+
 const pinnedComparisonBaseline = {
   label: "Initial baseline",
   pinnedAt: "2026-07-03T00:00:00.000Z",
@@ -75,22 +174,47 @@ const pinnedComparisonBaseline = {
   recommendation,
 };
 
+function version3Project(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    htcalcProjectVersion: 3,
+    activeModeId: "adi",
+    unitSystem: "imperial",
+    exportedAt: "2026-07-03T00:00:00.000Z",
+    metadata,
+    adi: {
+      input: adiInput,
+      calibration: DEFAULT_ADI_MODEL_CALIBRATION,
+    },
+    steelAustempering: {
+      input: steelAustemperingInput,
+    },
+    martempering: {
+      input: martemperingInput,
+    },
+    validationChecklists,
+    pinnedComparisonBaseline: null,
+    ...overrides,
+  };
+}
+
 describe("project state serialization", () => {
-  it("creates a version 2 project state snapshot with review state", () => {
+  it("creates a version 3 project state snapshot with steel and review state", () => {
     const project = createProjectState({
-      activeModeId: "adi",
+      activeModeId: "martempering",
       unitSystem: "imperial",
       adiInput,
       adiCalibration: DEFAULT_ADI_MODEL_CALIBRATION,
+      steelAustemperingInput,
+      martemperingInput,
       metadata,
-      validationChecklist,
+      validationChecklists,
       pinnedComparisonBaseline,
       exportedAt: "2026-07-03T00:00:00.000Z",
     });
 
     expect(project).toMatchObject({
-      htcalcProjectVersion: 2,
-      activeModeId: "adi",
+      htcalcProjectVersion: 3,
+      activeModeId: "martempering",
       unitSystem: "imperial",
       exportedAt: "2026-07-03T00:00:00.000Z",
       metadata,
@@ -98,19 +222,27 @@ describe("project state serialization", () => {
         input: adiInput,
         calibration: DEFAULT_ADI_MODEL_CALIBRATION,
       },
-      validationChecklist,
+      steelAustempering: {
+        input: steelAustemperingInput,
+      },
+      martempering: {
+        input: martemperingInput,
+      },
+      validationChecklists,
       pinnedComparisonBaseline,
     });
   });
 
   it("round-trips project state through formatted JSON", () => {
     const project = createProjectState({
-      activeModeId: "adi",
+      activeModeId: "steel-austempering",
       unitSystem: "metric",
       adiInput,
       adiCalibration: DEFAULT_ADI_MODEL_CALIBRATION,
+      steelAustemperingInput,
+      martemperingInput,
       metadata,
-      validationChecklist,
+      validationChecklists,
       pinnedComparisonBaseline,
       exportedAt: "2026-07-03T00:00:00.000Z",
     });
@@ -120,7 +252,7 @@ describe("project state serialization", () => {
     expect(parsed).toEqual(project);
   });
 
-  it("round-trips default blank metadata", () => {
+  it("round-trips default blank metadata and default steel states", () => {
     const project = createProjectState({
       activeModeId: "adi",
       unitSystem: "metric",
@@ -136,9 +268,12 @@ describe("project state serialization", () => {
       partName: "",
       notes: "",
     });
+    expect(parsed.steelAustempering.input.composition.C).toBeGreaterThan(0);
+    expect(parsed.martempering.input.martemper.temperHoldMin).toBeGreaterThan(0);
+    expect(parsed.validationChecklists.adi.items).toEqual([]);
   });
 
-  it("migrates version 1 project files to version 2 defaults", () => {
+  it("migrates version 1 project files to version 3 defaults", () => {
     const parsed = parseProjectState(JSON.stringify({
       htcalcProjectVersion: 1,
       activeModeId: "adi",
@@ -151,17 +286,49 @@ describe("project state serialization", () => {
     }));
 
     expect(parsed).toMatchObject({
-      htcalcProjectVersion: 2,
+      htcalcProjectVersion: 3,
       metadata: {
         customerName: "",
         partName: "",
         notes: "",
       },
-      validationChecklist: {
-        items: [],
+      validationChecklists: {
+        adi: {
+          items: [],
+        },
+        "steel-austempering": {
+          items: [],
+        },
+        martempering: {
+          items: [],
+        },
       },
       pinnedComparisonBaseline: null,
     });
+    expect(parsed.steelAustempering.input.composition.C).toBeGreaterThan(0);
+    expect(parsed.martempering.input.martemper.temperCount).toBe(1);
+  });
+
+  it("migrates version 2 project files to version 3 while preserving ADI review state", () => {
+    const parsed = parseProjectState(JSON.stringify({
+      htcalcProjectVersion: 2,
+      activeModeId: "adi",
+      unitSystem: "imperial",
+      exportedAt: "2026-07-03T00:00:00.000Z",
+      metadata,
+      adi: {
+        input: adiInput,
+        calibration: DEFAULT_ADI_MODEL_CALIBRATION,
+      },
+      validationChecklist,
+      pinnedComparisonBaseline,
+    }));
+
+    expect(parsed.htcalcProjectVersion).toBe(3);
+    expect(parsed.metadata).toEqual(metadata);
+    expect(parsed.validationChecklists.adi).toEqual(validationChecklist);
+    expect(parsed.validationChecklists["steel-austempering"].items).toEqual([]);
+    expect(parsed.pinnedComparisonBaseline).toEqual(pinnedComparisonBaseline);
   });
 
   it("rejects unsupported project versions", () => {
@@ -181,52 +348,21 @@ describe("project state serialization", () => {
 
   it("rejects invalid project enum values", () => {
     expect(() =>
-      parseProjectState(JSON.stringify({
-        htcalcProjectVersion: 2,
+      parseProjectState(JSON.stringify(version3Project({
         activeModeId: "steel-quenching",
-        unitSystem: "imperial",
-        exportedAt: "2026-07-03T00:00:00.000Z",
-        metadata,
-        adi: {
-          input: adiInput,
-          calibration: DEFAULT_ADI_MODEL_CALIBRATION,
-        },
-        validationChecklist,
-        pinnedComparisonBaseline: null,
-      })),
+      }))),
     ).toThrow(/activeModeId/);
 
     expect(() =>
-      parseProjectState(JSON.stringify({
-        htcalcProjectVersion: 2,
-        activeModeId: "adi",
+      parseProjectState(JSON.stringify(version3Project({
         unitSystem: "si",
-        exportedAt: "2026-07-03T00:00:00.000Z",
-        metadata,
-        adi: {
-          input: {
-            ...adiInput,
-            target: {
-              ...adiInput.target,
-              grade: "999-999-99",
-            },
-          },
-          calibration: DEFAULT_ADI_MODEL_CALIBRATION,
-        },
-        validationChecklist,
-        pinnedComparisonBaseline: null,
-      })),
+      }))),
     ).toThrow(/unitSystem/);
   });
 
-  it("rejects invalid numeric ADI values before restoring state", () => {
+  it("rejects invalid numeric ADI and steel values before restoring state", () => {
     expect(() =>
-      parseProjectState(JSON.stringify({
-        htcalcProjectVersion: 2,
-        activeModeId: "adi",
-        unitSystem: "imperial",
-        exportedAt: "2026-07-03T00:00:00.000Z",
-        metadata,
+      parseProjectState(JSON.stringify(version3Project({
         adi: {
           input: {
             ...adiInput,
@@ -237,74 +373,84 @@ describe("project state serialization", () => {
           },
           calibration: DEFAULT_ADI_MODEL_CALIBRATION,
         },
-        validationChecklist,
-        pinnedComparisonBaseline: null,
-      })),
+      }))),
     ).toThrow(/geometry\.criticalSectionMm/);
+
+    expect(() =>
+      parseProjectState(JSON.stringify(version3Project({
+        steelAustempering: {
+          input: {
+            ...steelAustemperingInput,
+            composition: {
+              ...steelAustemperingInput.composition,
+              C: -0.1,
+            },
+          },
+        },
+      }))),
+    ).toThrow(/steelAustempering\.input\.composition\.C/);
+  });
+
+  it("rejects invalid steel enum values", () => {
+    expect(() =>
+      parseProjectState(JSON.stringify(version3Project({
+        steelAustempering: {
+          input: {
+            ...steelAustemperingInput,
+            austemper: {
+              ...steelAustemperingInput.austemper,
+              bainiteTarget: "middle",
+            },
+          },
+        },
+      }))),
+    ).toThrow(/steelAustempering\.input\.austemper\.bainiteTarget/);
   });
 
   it("rejects malformed nested project review objects", () => {
     expect(() =>
-      parseProjectState(JSON.stringify({
-        htcalcProjectVersion: 2,
-        activeModeId: "adi",
-        unitSystem: "imperial",
-        exportedAt: "2026-07-03T00:00:00.000Z",
+      parseProjectState(JSON.stringify(version3Project({
         metadata: {
           customerName: "ACME",
           partName: "Bracket",
           notes: 12,
         },
-        adi: {
-          input: adiInput,
-          calibration: DEFAULT_ADI_MODEL_CALIBRATION,
-        },
-        validationChecklist,
-        pinnedComparisonBaseline: null,
-      })),
+      }))),
     ).toThrow(/metadata\.notes/);
 
     expect(() =>
-      parseProjectState(JSON.stringify({
-        htcalcProjectVersion: 2,
-        activeModeId: "adi",
-        unitSystem: "imperial",
-        exportedAt: "2026-07-03T00:00:00.000Z",
-        metadata,
-        adi: {
-          input: adiInput,
-          calibration: DEFAULT_ADI_MODEL_CALIBRATION,
+      parseProjectState(JSON.stringify(version3Project({
+        validationChecklists: {
+          ...validationChecklists,
+          adi: {
+            items: [
+              {
+                id: "confirm-grade-target",
+                label: "Confirm ASTM grade target with drawing requirements.",
+                checked: "yes",
+                notes: "",
+              },
+            ],
+          },
         },
-        validationChecklist: {
-          items: [
-            {
-              id: "confirm-grade-target",
-              label: "Confirm ASTM grade target with drawing requirements.",
-              checked: "yes",
-              notes: "",
-            },
-          ],
-        },
-        pinnedComparisonBaseline: null,
-      })),
-    ).toThrow(/validationChecklist\.items\[0\]\.checked/);
+      }))),
+    ).toThrow(/validationChecklists\.adi\.items\[0\]\.checked/);
   });
 
-  it("rejects project files missing ADI input", () => {
+  it("rejects project files missing ADI or steel input", () => {
     expect(() =>
-      parseProjectState(JSON.stringify({
-        htcalcProjectVersion: 2,
-        activeModeId: "adi",
-        unitSystem: "imperial",
-        exportedAt: "2026-07-03T00:00:00.000Z",
-        metadata,
+      parseProjectState(JSON.stringify(version3Project({
         adi: {
           calibration: DEFAULT_ADI_MODEL_CALIBRATION,
         },
-        validationChecklist,
-        pinnedComparisonBaseline: null,
-      })),
+      }))),
     ).toThrow(/adi\.input/);
+
+    expect(() =>
+      parseProjectState(JSON.stringify(version3Project({
+        martempering: {},
+      }))),
+    ).toThrow(/martempering\.input/);
   });
 
   it("rejects invalid JSON", () => {

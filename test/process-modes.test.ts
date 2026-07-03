@@ -15,23 +15,18 @@ describe("process mode metadata", () => {
     ]);
   });
 
-  it("marks ADI as implemented and future modes as planned", () => {
+  it("marks all current process families as implemented", () => {
     expect(getProcessMode("adi").status).toBe("implemented");
-    expect(getProcessMode("steel-austempering").status).toBe("planned");
-    expect(getProcessMode("martempering").status).toBe("planned");
+    expect(getProcessMode("steel-austempering").status).toBe("implemented");
+    expect(getProcessMode("martempering").status).toBe("implemented");
   });
 
-  it("exposes planned input groups for unimplemented modes", () => {
-    for (const mode of plannedProcessModes()) {
-      expect(mode.plannedInputs.length).toBeGreaterThanOrEqual(3);
-    }
-  });
-
-  it("splits implemented and planned modes", () => {
-    expect(implementedProcessModes().map((mode) => mode.id)).toEqual(["adi"]);
-    expect(plannedProcessModes().map((mode) => mode.id)).toEqual([
+  it("exposes all implemented process modes", () => {
+    expect(implementedProcessModes().map((mode) => mode.id)).toEqual([
+      "adi",
       "steel-austempering",
       "martempering",
     ]);
+    expect(plannedProcessModes()).toEqual([]);
   });
 });

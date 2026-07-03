@@ -4,11 +4,22 @@ import {
   type AdiProcessInput,
   type AdiProcessRecommendation,
 } from "../adi/index.js";
+import {
+  STEEL_COMPOSITION_KEYS,
+  type MartemperingInput,
+  type SteelAustemperingInput,
+  type SteelBaseInput,
+} from "../steel/index.js";
 import { PROCESS_MODES, type ProcessModeId } from "./process-modes.js";
+import {
+  defaultMartemperingInput,
+  defaultSteelAustemperingInput,
+} from "./steel-state.js";
 import type { UnitSystem } from "./units.js";
 
-export const HTCALC_PROJECT_VERSION = 2;
+export const HTCALC_PROJECT_VERSION = 3;
 const LEGACY_PROJECT_VERSION = 1;
+const REVIEW_PROJECT_VERSION = 2;
 
 const validProcessModeIds: ReadonlySet<ProcessModeId> = new Set(PROCESS_MODES.map((mode) => mode.id));
 const validUnitSystems: ReadonlySet<UnitSystem> = new Set(["imperial", "metric"]);
@@ -73,6 +84,75 @@ const validCarbonPotentialCategories: ReadonlySet<
   "high",
   "equipment-calibrated",
 ]);
+const validSteelStartingConditions: ReadonlySet<SteelBaseInput["startingCondition"]> = new Set([
+  "normalized",
+  "annealed",
+  "spheroidized",
+  "quenched-tempered",
+  "hot-rolled",
+  "unknown",
+]);
+const validSteelPriorities: ReadonlySet<SteelBaseInput["target"]["priority"]> = new Set([
+  "hardness",
+  "toughness",
+  "distortion",
+  "wear",
+  "fatigue",
+]);
+const validSteelFurnaceTypes: ReadonlySet<SteelBaseInput["equipment"]["furnaceType"]> = new Set([
+  "controlled-atmosphere",
+  "air",
+  "vacuum",
+  "inert",
+  "salt",
+]);
+const validSteelAtmosphereTypes: ReadonlySet<SteelBaseInput["equipment"]["atmosphereType"]> = new Set([
+  "endothermic-neutral",
+  "nitrogen-methanol",
+  "vacuum",
+  "inert",
+  "air",
+  "salt",
+  "unknown",
+]);
+const validSteelQuenchMedia: ReadonlySet<SteelBaseInput["equipment"]["quenchMedium"]> = new Set([
+  "water",
+  "oil",
+  "polymer",
+  "salt",
+  "hot-oil",
+  "air",
+  "furnace",
+  "other",
+]);
+const validSteelAgitations: ReadonlySet<SteelBaseInput["equipment"]["agitation"]> = new Set([
+  "poor",
+  "fair",
+  "good",
+]);
+const validBainiteTargets: ReadonlySet<SteelAustemperingInput["austemper"]["bainiteTarget"]> = new Set([
+  "upper",
+  "lower",
+  "balanced",
+]);
+const validAustemperBathMedia: ReadonlySet<SteelAustemperingInput["austemper"]["bathMedium"]> = new Set([
+  "salt",
+  "hot-oil",
+  "fluidized-bed",
+  "furnace",
+  "other",
+]);
+const validMartemperBathMedia: ReadonlySet<MartemperingInput["martemper"]["bathMedium"]> = new Set([
+  "salt",
+  "hot-oil",
+  "polymer",
+  "other",
+]);
+const validEqualizationStrategies: ReadonlySet<MartemperingInput["martemper"]["equalizationStrategy"]> = new Set([
+  "section-equalized",
+  "surface-equalized",
+  "time-limited",
+]);
 
 const calibrationKeys = [
   "alloyAustemperabilityScale",
@@ -104,6 +184,14 @@ const defaultMetadata: ProjectMetadata = Object.freeze({
   notes: "",
 });
 
+function emptyValidationChecklists(): Record<ProcessModeId, ValidationChecklistState> {
+  return {
+    adi: { items: [] },
+    "steel-austempering": { items: [] },
+    martempering: { items: [] },
+  };
+}
+
 export interface ProjectMetadata {
   readonly customerName: string;
   readonly partName: string;
@@ -120,6 +208,8 @@ export interface ValidationChecklistItem {
 export interface ValidationChecklistState {
   readonly items: readonly ValidationChecklistItem[];
 }
+
+export type ModeValidationChecklists = Readonly<Record<ProcessModeId, ValidationChecklistState>>;
 
 export interface PinnedComparisonBaseline {
   readonly label: string;
@@ -139,7 +229,13 @@ export interface HtcalcProjectState {
     readonly input: AdiProcessInput;
     readonly calibration: AdiModelCalibration;
   };
-  readonly validationChecklist: ValidationChecklistState;
+  readonly steelAustempering: {
+    readonly input: SteelAustemperingInput;
+  };
+  readonly martempering: {
+    readonly input: MartemperingInput;
+  };
+  readonly validationChecklists: ModeValidationChecklists;
   readonly pinnedComparisonBaseline: PinnedComparisonBaseline | null;
 }
 
@@ -148,8 +244,11 @@ export interface CreateProjectStateInput {
   readonly unitSystem: UnitSystem;
   readonly adiInput: AdiProcessInput;
   readonly adiCalibration: AdiModelCalibration;
+  readonly steelAustemperingInput?: SteelAustemperingInput;
+  readonly martemperingInput?: MartemperingInput;
   readonly metadata?: ProjectMetadata;
   readonly validationChecklist?: ValidationChecklistState;
+  readonly validationChecklists?: Partial<ModeValidationChecklists>;
   readonly pinnedComparisonBaseline?: PinnedComparisonBaseline | null;
   readonly exportedAt?: string;
 }
@@ -165,7 +264,17 @@ export function createProjectState(input: CreateProjectStateInput): HtcalcProjec
       input: structuredClone(input.adiInput),
       calibration: structuredClone(input.adiCalibration),
     },
-    validationChecklist: structuredClone(input.validationChecklist ?? { items: [] }),
+    steelAustempering: {
+      input: structuredClone(input.steelAustemperingInput ?? defaultSteelAustemperingInput()),
+    },
+    martempering: {
+      input: structuredClone(input.martemperingInput ?? defaultMartemperingInput()),
+    },
+    validationChecklists: structuredClone({
+      ...emptyValidationChecklists(),
+      ...input.validationChecklists,
+      adi: input.validationChecklists?.adi ?? input.validationChecklist ?? { items: [] },
+    }),
     pinnedComparisonBaseline: input.pinnedComparisonBaseline
       ? structuredClone(input.pinnedComparisonBaseline)
       : null,
@@ -188,6 +297,7 @@ export function parseProjectState(json: string): HtcalcProjectState {
 
   if (
     parsed.htcalcProjectVersion !== HTCALC_PROJECT_VERSION &&
+    parsed.htcalcProjectVersion !== REVIEW_PROJECT_VERSION &&
     parsed.htcalcProjectVersion !== LEGACY_PROJECT_VERSION
   ) {
     throw new Error(`Unsupported HTCalc project version: ${String(parsed.htcalcProjectVersion)}`);
@@ -200,8 +310,33 @@ export function parseProjectState(json: string): HtcalcProjectState {
       ...base,
       htcalcProjectVersion: HTCALC_PROJECT_VERSION,
       metadata: structuredClone(defaultMetadata),
-      validationChecklist: { items: [] },
+      steelAustempering: {
+        input: defaultSteelAustemperingInput(),
+      },
+      martempering: {
+        input: defaultMartemperingInput(),
+      },
+      validationChecklists: emptyValidationChecklists(),
       pinnedComparisonBaseline: null,
+    };
+  }
+
+  if (parsed.htcalcProjectVersion === REVIEW_PROJECT_VERSION) {
+    return {
+      ...base,
+      htcalcProjectVersion: HTCALC_PROJECT_VERSION,
+      metadata: parseMetadata(parsed.metadata, "metadata"),
+      steelAustempering: {
+        input: defaultSteelAustemperingInput(),
+      },
+      martempering: {
+        input: defaultMartemperingInput(),
+      },
+      validationChecklists: {
+        ...emptyValidationChecklists(),
+        adi: parseValidationChecklist(parsed.validationChecklist, "validationChecklist"),
+      },
+      pinnedComparisonBaseline: parsePinnedComparisonBaseline(parsed.pinnedComparisonBaseline),
     };
   }
 
@@ -209,14 +344,21 @@ export function parseProjectState(json: string): HtcalcProjectState {
     ...base,
     htcalcProjectVersion: HTCALC_PROJECT_VERSION,
     metadata: parseMetadata(parsed.metadata, "metadata"),
-    validationChecklist: parseValidationChecklist(parsed.validationChecklist),
+    steelAustempering: parseSteelAustemperingProject(parsed.steelAustempering),
+    martempering: parseMartemperingProject(parsed.martempering),
+    validationChecklists: parseValidationChecklists(parsed.validationChecklists),
     pinnedComparisonBaseline: parsePinnedComparisonBaseline(parsed.pinnedComparisonBaseline),
   };
 }
 
 function parseBaseProject(project: Record<string, unknown>): Omit<
   HtcalcProjectState,
-  "htcalcProjectVersion" | "metadata" | "validationChecklist" | "pinnedComparisonBaseline"
+  | "htcalcProjectVersion"
+  | "metadata"
+  | "steelAustempering"
+  | "martempering"
+  | "validationChecklists"
+  | "pinnedComparisonBaseline"
 > {
   assertString(project.activeModeId, "activeModeId");
   assertMember(project.activeModeId, validProcessModeIds, "activeModeId");
@@ -249,14 +391,27 @@ function parseMetadata(value: unknown, path: string): ProjectMetadata {
   };
 }
 
-function parseValidationChecklist(value: unknown): ValidationChecklistState {
-  assertRecord(value, "validationChecklist");
-  assertArray(value.items, "validationChecklist.items");
+function parseValidationChecklists(value: unknown): ModeValidationChecklists {
+  assertRecord(value, "validationChecklists");
+
+  return {
+    adi: parseValidationChecklist(value.adi, "validationChecklists.adi"),
+    "steel-austempering": parseValidationChecklist(
+      value["steel-austempering"],
+      "validationChecklists.steel-austempering",
+    ),
+    martempering: parseValidationChecklist(value.martempering, "validationChecklists.martempering"),
+  };
+}
+
+function parseValidationChecklist(value: unknown, path: string): ValidationChecklistState {
+  assertRecord(value, path);
+  assertArray(value.items, `${path}.items`);
 
   return {
     items: value.items.map((item, index) => parseChecklistItem(
       item,
-      `validationChecklist.items[${index}]`,
+      `${path}.items[${index}]`,
     )),
   };
 }
@@ -294,6 +449,221 @@ function parsePinnedComparisonBaseline(value: unknown): PinnedComparisonBaseline
       value.recommendation,
       "pinnedComparisonBaseline.recommendation",
     ),
+  };
+}
+
+function parseSteelAustemperingProject(value: unknown): HtcalcProjectState["steelAustempering"] {
+  assertRecord(value, "steelAustempering");
+
+  return {
+    input: parseSteelAustemperingInput(value.input, "steelAustempering.input"),
+  };
+}
+
+function parseMartemperingProject(value: unknown): HtcalcProjectState["martempering"] {
+  assertRecord(value, "martempering");
+
+  return {
+    input: parseMartemperingInput(value.input, "martempering.input"),
+  };
+}
+
+function parseSteelAustemperingInput(value: unknown, path: string): SteelAustemperingInput {
+  const base = parseSteelBaseInput(value, path);
+  assertRecord(value, path);
+  assertRecord(value.austemper, `${path}.austemper`);
+  const austemperRecord = value.austemper;
+
+  const austemper: SteelAustemperingInput["austemper"] = {
+    bainiteTarget: enumValue(
+      austemperRecord.bainiteTarget,
+      validBainiteTargets,
+      `${path}.austemper.bainiteTarget`,
+    ),
+    bathMedium: enumValue(
+      austemperRecord.bathMedium,
+      validAustemperBathMedia,
+      `${path}.austemper.bathMedium`,
+    ),
+  };
+
+  if (austemperRecord.bathTemperatureC !== undefined) {
+    austemper.bathTemperatureC = finiteNumber(
+      austemperRecord.bathTemperatureC,
+      `${path}.austemper.bathTemperatureC`,
+      { min: 0 },
+    );
+  }
+
+  if (austemperRecord.maxHoldMin !== undefined) {
+    austemper.maxHoldMin = finiteNumber(
+      austemperRecord.maxHoldMin,
+      `${path}.austemper.maxHoldMin`,
+      { minExclusive: 0 },
+    );
+  }
+
+  return {
+    ...base,
+    austemper,
+  };
+}
+
+function parseMartemperingInput(value: unknown, path: string): MartemperingInput {
+  const base = parseSteelBaseInput(value, path);
+  assertRecord(value, path);
+  assertRecord(value.martemper, `${path}.martemper`);
+  const martemperRecord = value.martemper;
+
+  const martemper: MartemperingInput["martemper"] = {
+    bathMedium: enumValue(
+      martemperRecord.bathMedium,
+      validMartemperBathMedia,
+      `${path}.martemper.bathMedium`,
+    ),
+    equalizationStrategy: enumValue(
+      martemperRecord.equalizationStrategy,
+      validEqualizationStrategies,
+      `${path}.martemper.equalizationStrategy`,
+    ),
+    temperHoldMin: finiteNumber(
+      martemperRecord.temperHoldMin,
+      `${path}.martemper.temperHoldMin`,
+      { minExclusive: 0 },
+    ),
+    temperCount: finiteNumber(
+      martemperRecord.temperCount,
+      `${path}.martemper.temperCount`,
+      { minExclusive: 0, max: 3 },
+    ),
+  };
+
+  if (!Number.isInteger(martemper.temperCount)) {
+    throw new Error(`HTCalc project file has invalid value at ${path}.martemper.temperCount.`);
+  }
+
+  if (martemperRecord.bathTemperatureC !== undefined) {
+    martemper.bathTemperatureC = finiteNumber(
+      martemperRecord.bathTemperatureC,
+      `${path}.martemper.bathTemperatureC`,
+      { min: 0 },
+    );
+  }
+
+  if (martemperRecord.maxEqualizationMin !== undefined) {
+    martemper.maxEqualizationMin = finiteNumber(
+      martemperRecord.maxEqualizationMin,
+      `${path}.martemper.maxEqualizationMin`,
+      { minExclusive: 0 },
+    );
+  }
+
+  return {
+    ...base,
+    martemper,
+  };
+}
+
+function parseSteelBaseInput(value: unknown, path: string): SteelBaseInput {
+  assertRecord(value, path);
+  assertRecord(value.composition, `${path}.composition`);
+  assertRecord(value.geometry, `${path}.geometry`);
+  assertRecord(value.target, `${path}.target`);
+  assertRecord(value.equipment, `${path}.equipment`);
+  const compositionRecord = value.composition;
+  const geometryRecord = value.geometry;
+  const targetRecord = value.target;
+  const equipmentRecord = value.equipment;
+
+  const composition = Object.fromEntries(
+    STEEL_COMPOSITION_KEYS.map((key) => [
+      key,
+      finiteNumber(compositionRecord[key], `${path}.composition.${key}`, { min: 0 }),
+    ]),
+  ) as unknown as SteelBaseInput["composition"];
+
+  const geometry: SteelBaseInput["geometry"] = {
+    maxSectionMm: finiteNumber(geometryRecord.maxSectionMm, `${path}.geometry.maxSectionMm`, {
+      minExclusive: 0,
+    }),
+    minSectionMm: finiteNumber(geometryRecord.minSectionMm, `${path}.geometry.minSectionMm`, {
+      minExclusive: 0,
+    }),
+    criticalSectionMm: finiteNumber(
+      geometryRecord.criticalSectionMm,
+      `${path}.geometry.criticalSectionMm`,
+      { minExclusive: 0 },
+    ),
+  };
+
+  if (geometryRecord.estimatedMassKg !== undefined) {
+    geometry.estimatedMassKg = finiteNumber(
+      geometryRecord.estimatedMassKg,
+      `${path}.geometry.estimatedMassKg`,
+      { minExclusive: 0 },
+    );
+  }
+
+  const target: SteelBaseInput["target"] = {
+    priority: enumValue(targetRecord.priority, validSteelPriorities, `${path}.target.priority`),
+  };
+
+  if (targetRecord.targetHardnessHrc !== undefined) {
+    target.targetHardnessHrc = finiteNumber(
+      targetRecord.targetHardnessHrc,
+      `${path}.target.targetHardnessHrc`,
+      { min: 5, max: 70 },
+    );
+  }
+
+  const furnaceType = enumValue(
+    equipmentRecord.furnaceType,
+    validSteelFurnaceTypes,
+    `${path}.equipment.furnaceType`,
+  );
+  const atmosphereType = enumValue(
+    equipmentRecord.atmosphereType,
+    validSteelAtmosphereTypes,
+    `${path}.equipment.atmosphereType`,
+  );
+  assertBoolean(equipmentRecord.carbonProtection, `${path}.equipment.carbonProtection`);
+  const quenchMedium = enumValue(
+    equipmentRecord.quenchMedium,
+    validSteelQuenchMedia,
+    `${path}.equipment.quenchMedium`,
+  );
+  const agitation = enumValue(
+    equipmentRecord.agitation,
+    validSteelAgitations,
+    `${path}.equipment.agitation`,
+  );
+
+  return {
+    composition,
+    geometry,
+    startingCondition: enumValue(
+      value.startingCondition,
+      validSteelStartingConditions,
+      `${path}.startingCondition`,
+    ),
+    target,
+    equipment: {
+      furnaceType,
+      atmosphereType,
+      carbonProtection: equipmentRecord.carbonProtection,
+      quenchMedium,
+      agitation,
+      transferTimeSec: finiteNumber(
+        equipmentRecord.transferTimeSec,
+        `${path}.equipment.transferTimeSec`,
+        { min: 0 },
+      ),
+      bathUniformityC: finiteNumber(
+        equipmentRecord.bathUniformityC,
+        `${path}.equipment.bathUniformityC`,
+        { min: 0 },
+      ),
+    },
   };
 }
 

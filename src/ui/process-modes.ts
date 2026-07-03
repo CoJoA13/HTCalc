@@ -23,8 +23,8 @@ export const PROCESS_MODES: readonly ProcessMode[] = Object.freeze([
     id: "steel-austempering",
     label: "Steel Austempering",
     icon: "ph-thermometer-hot",
-    status: "planned",
-    description: "Future steel austempering workflow for bainitic steel transformations.",
+    status: "implemented",
+    description: "Bainitic steel austempering process recommendation.",
     plannedInputs: [
       "Steel composition and hardenability",
       "Austenitizing temperature and soak",
@@ -36,8 +36,8 @@ export const PROCESS_MODES: readonly ProcessMode[] = Object.freeze([
     id: "martempering",
     label: "Martempering",
     icon: "ph-lock-simple",
-    status: "planned",
-    description: "Future martempering workflow for interrupted quench and equalization control.",
+    status: "implemented",
+    description: "Interrupted quench, equalization, and tempering process recommendation.",
     plannedInputs: [
       "Steel grade and martensite-start estimate",
       "Austenitizing temperature and soak",

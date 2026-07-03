@@ -19,10 +19,14 @@ import {
   temperatureNominalLabel,
   temperatureRangeLabel,
   toDisplayValue,
-  toMetricValue,
   type UnitSystem,
   unitLabelForPath,
 } from "./units.js";
+import {
+  calibrationControlShouldSync,
+  parseNumericInputValue,
+  windowStatusBadge,
+} from "./view-model.js";
 
 type CompositionKey = keyof AdiProcessInput["composition"];
 type CalibrationKey = keyof AdiModelCalibration;
@@ -377,6 +381,7 @@ function bindInputs(): void {
     state.equipment.carbonPotentialControl = checked;
   });
 
+  bindHelpButtons();
   bindSettings();
 }
 
@@ -385,6 +390,15 @@ function bindCheckbox(id: string, update: (checked: boolean) => void): void {
   input?.addEventListener("change", () => {
     update(input.checked);
     renderRecommendation();
+  });
+}
+
+function bindHelpButtons(): void {
+  document.querySelectorAll<HTMLElement>(".help-button").forEach((control) => {
+    control.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
   });
 }
 
@@ -461,7 +475,7 @@ function syncCalibrationControls(changedKey?: CalibrationKey): void {
 
   document.querySelectorAll<HTMLInputElement>(selector).forEach((control) => {
     const key = control.dataset.calibration as CalibrationKey | undefined;
-    if (key) {
+    if (key && calibrationControlShouldSync(key, changedKey, control === document.activeElement)) {
       control.value = calibration[key].toFixed(2);
     }
   });
@@ -469,7 +483,7 @@ function syncCalibrationControls(changedKey?: CalibrationKey): void {
 
 function setValue(path: string, control: HTMLInputElement | HTMLSelectElement): void {
   const value = control instanceof HTMLInputElement && control.type === "number"
-    ? toMetricValue(path, Number(control.value), unitSystem)
+    ? parseNumericInputValue(path, control.value, unitSystem)
     : control.value;
 
   switch (path) {
@@ -495,14 +509,14 @@ function setValue(path: string, control: HTMLInputElement | HTMLSelectElement): 
       state.equipment.austemperBathType = value as AustemperBathType;
       break;
     default:
-      assignNumeric(path, Number(value));
+      assignNumeric(path, typeof value === "number" ? value : undefined);
   }
 }
 
-function assignNumeric(path: string, value: number): void {
+function assignNumeric(path: string, value: number | undefined): void {
   const [group, key] = path.split(".") as [string, string];
   if (group === "composition") {
-    state.composition[key as CompositionKey] = value;
+    state.composition[key as CompositionKey] = value ?? Number.NaN;
   }
   if (group === "geometry") {
     Object.assign(state.geometry, { [key]: value });
@@ -536,8 +550,8 @@ function renderRecommendation(): void {
       </div>
 
       <div class="window-group">
-        ${processWindow("ph-thermometer-hot", "Austenitize", temperatureRangeLabel(result.austenitize.temperature, unitSystem), temperatureNominalLabel(result.austenitize.temperature, unitSystem), `${result.austenitize.soakAfterCoreAtTemp.minMin}-${result.austenitize.soakAfterCoreAtTemp.maxMin} min`)}
-        ${processWindow("ph-drop", "Austemper", temperatureRangeLabel(result.austemper.temperature, unitSystem), temperatureNominalLabel(result.austemper.temperature, unitSystem), `${result.austemper.holdAfterCoreAtTemp.minMin}-${result.austemper.holdAfterCoreAtTemp.maxMin} min`)}
+        ${processWindow("ph-thermometer-hot", "Austenitize", temperatureRangeLabel(result.austenitize.temperature, unitSystem), temperatureNominalLabel(result.austenitize.temperature, unitSystem), "Soak after core temp", `${result.austenitize.soakAfterCoreAtTemp.minMin}-${result.austenitize.soakAfterCoreAtTemp.maxMin} min`, result.austemper.processingWindowStatus, result.austenitize.totalFurnaceTimeNote)}
+        ${processWindow("ph-drop", "Austemper", temperatureRangeLabel(result.austemper.temperature, unitSystem), temperatureNominalLabel(result.austemper.temperature, unitSystem), "Hold after core temp", `${result.austemper.holdAfterCoreAtTemp.minMin}-${result.austemper.holdAfterCoreAtTemp.maxMin} min`, result.austemper.processingWindowStatus)}
       </div>
 
       <div class="metric-strip">
@@ -723,15 +737,27 @@ function toggleField(id: string, label: string, checked = false): string {
   `;
 }
 
-function processWindow(icon: string, title: string, range: string, nominal: string, hold: string): string {
+function processWindow(
+  icon: string,
+  title: string,
+  range: string,
+  nominal: string,
+  timeLabel: string,
+  timeValue: string,
+  status: "robust" | "narrow" | "invalid",
+  note = "",
+): string {
+  const badge = windowStatusBadge(status);
+
   return `
     <div class="process-window">
-      <div class="window-title"><i class="ph ${icon}"></i>${title}<span>OK</span></div>
+      <div class="window-title"><i class="ph ${icon}"></i>${title}<span class="${badge.className}">${badge.label}</span></div>
       <div class="window-main">${range}</div>
       <div class="window-details">
         <span>Recommended <strong>${nominal}</strong></span>
-        <span>Hold <strong>${hold}</strong></span>
+        <span>${timeLabel} <strong>${timeValue}</strong></span>
       </div>
+      ${note ? `<p class="window-note">${note}</p>` : ""}
     </div>
   `;
 }

@@ -393,8 +393,25 @@ button:focus-visible {
 
 .window-title span {
   margin-left: auto;
-  color: #15803d;
+  padding: 2px 7px;
+  border-radius: 999px;
   font-size: 12px;
+  font-weight: 820;
+}
+
+.window-title .status-robust {
+  color: #15803d;
+  background: #e8f7ef;
+}
+
+.window-title .status-narrow {
+  color: #9a5b00;
+  background: #fff4dc;
+}
+
+.window-title .status-invalid {
+  color: #b42318;
+  background: #fee7e4;
 }
 
 .window-main {
@@ -415,6 +432,14 @@ button:focus-visible {
 
 .window-details strong {
   color: #172033;
+}
+
+.window-note {
+  margin: 0;
+  padding: 0 12px 13px;
+  color: #607086;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .metric-strip {

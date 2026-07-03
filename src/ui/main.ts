@@ -15,6 +15,12 @@ import {
   type StartingMatrix,
 } from "../adi/index.js";
 import {
+  getProcessMode,
+  PROCESS_MODES,
+  type ProcessMode,
+  type ProcessModeId,
+} from "./process-modes.js";
+import {
   isUnitSensitivePath,
   temperatureNominalLabel,
   temperatureRangeLabel,
@@ -198,6 +204,7 @@ const state: AdiProcessInput = {
 
 let calibration: AdiModelCalibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
 let unitSystem: UnitSystem = "imperial";
+let activeModeId: ProcessModeId = "adi";
 
 app.innerHTML = `
   <header class="app-header">
@@ -209,9 +216,7 @@ app.innerHTML = `
       </div>
     </div>
     <nav class="process-tabs" aria-label="Process mode">
-      <button class="process-tab is-active" type="button"><i class="ph ph-target"></i> ADI</button>
-      <button class="process-tab" type="button" disabled><i class="ph ph-thermometer-hot"></i> Steel Austempering</button>
-      <button class="process-tab" type="button" disabled><i class="ph ph-lock-simple"></i> Martempering</button>
+      ${processTabs()}
     </nav>
     <div class="header-actions">
       <button class="icon-button" type="button" title="Load project"><i class="ph ph-folder-open"></i></button>
@@ -220,7 +225,53 @@ app.innerHTML = `
     </div>
   </header>
 
-  <main class="workspace">
+  <main class="workspace" id="workspace">
+    ${adiWorkspace()}
+  </main>
+
+  <div class="settings-backdrop" id="settings-backdrop" hidden>
+    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="settings-header">
+        <div>
+          <div class="eyebrow">Settings</div>
+          <h2 id="settings-title">Model Settings</h2>
+        </div>
+        <button class="icon-button" id="settings-close" type="button" title="Close settings">
+          <i class="ph ph-x"></i>
+        </button>
+      </div>
+      <div class="settings-copy">
+        Units apply across process modes. ADI model calibration applies only to the ADI recommendation model.
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Units</div>
+        <div class="segmented-control" role="radiogroup" aria-label="Unit system">
+          <label>
+            <input type="radio" name="unit-system" value="imperial" checked />
+            <span>Imperial</span>
+          </label>
+          <label>
+            <input type="radio" name="unit-system" value="metric" />
+            <span>Metric</span>
+          </label>
+        </div>
+      </div>
+      <div class="settings-section">
+        <div class="settings-section-title">ADI Model Calibration</div>
+        <div class="settings-grid">
+          ${settingsFields()}
+        </div>
+      </div>
+      <div class="settings-footer">
+        <button class="secondary-action" id="settings-reset" type="button">Reset Defaults</button>
+        <button class="primary-action" id="settings-done" type="button">Done</button>
+      </div>
+    </section>
+  </div>
+`;
+
+function adiWorkspace(): string {
+  return `
     <section class="input-pane" aria-label="ADI inputs">
       <div class="section-block">
         <div class="section-heading"><i class="ph ph-crosshair"></i><span>1. ASTM Target</span></div>
@@ -311,59 +362,59 @@ app.innerHTML = `
     <aside class="result-pane" aria-label="ADI recommendation">
       <div id="recommendation"></div>
     </aside>
-  </main>
-
-  <div class="settings-backdrop" id="settings-backdrop" hidden>
-    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-      <div class="settings-header">
-        <div>
-          <div class="eyebrow">Equipment calibration</div>
-          <h2 id="settings-title">Model Settings</h2>
-        </div>
-        <button class="icon-button" id="settings-close" type="button" title="Close settings">
-          <i class="ph ph-x"></i>
-        </button>
-      </div>
-      <div class="settings-copy">
-        Tune these only after comparing the recommendation against your furnace, bath, coupons, and metallography.
-        A value of 1.00 is the default research-based heuristic.
-      </div>
-      <div class="settings-section">
-        <div class="settings-section-title">Units</div>
-        <div class="segmented-control" role="radiogroup" aria-label="Unit system">
-          <label>
-            <input type="radio" name="unit-system" value="imperial" checked />
-            <span>Imperial</span>
-          </label>
-          <label>
-            <input type="radio" name="unit-system" value="metric" />
-            <span>Metric</span>
-          </label>
-        </div>
-      </div>
-      <div class="settings-grid">
-        ${settingsFields()}
-      </div>
-      <div class="settings-footer">
-        <button class="secondary-action" id="settings-reset" type="button">Reset Defaults</button>
-        <button class="primary-action" id="settings-done" type="button">Done</button>
-      </div>
-    </section>
-  </div>
-`;
-
-const recommendationEl = document.querySelector<HTMLDivElement>("#recommendation");
-
-if (!recommendationEl) {
-  throw new Error("Recommendation panel was not found.");
+  `;
 }
 
-const recommendationPanel = recommendationEl;
+function plannedWorkspace(mode: ProcessMode): string {
+  return `
+    <section class="planned-pane" aria-label="${mode.label} planned mode">
+      <div class="planned-header">
+        <div class="planned-icon"><i class="ph ${mode.icon}"></i></div>
+        <div>
+          <div class="eyebrow">Planned Process Mode</div>
+          <h1>${mode.label}</h1>
+          <p>${mode.description}</p>
+        </div>
+      </div>
+      <div class="planned-body">
+        <div class="result-title"><i class="ph ph-list-checks"></i> Future Input Groups</div>
+        <ul class="check-list">
+          ${mode.plannedInputs.map((input) => `<li>${input}</li>`).join("")}
+        </ul>
+      </div>
+    </section>
+  `;
+}
 
-bindInputs();
+function processTabs(): string {
+  return PROCESS_MODES.map((mode) => `
+    <button
+      class="process-tab ${mode.id === activeModeId ? "is-active" : ""} ${mode.status === "planned" ? "is-planned" : ""}"
+      type="button"
+      data-process-mode="${mode.id}"
+    >
+      <i class="ph ${mode.icon}"></i>
+      ${mode.label}
+      ${mode.status === "planned" ? `<span>Planned</span>` : ""}
+    </button>
+  `).join("");
+}
+
+const workspaceRoot = document.querySelector<HTMLElement>("#workspace");
+
+if (!workspaceRoot) {
+  throw new Error("HTCalc workspace was not found.");
+}
+
+const workspaceEl = workspaceRoot;
+
+bindProcessTabs();
+bindAdiInputs();
+bindHelpButtons();
+bindSettings();
 renderRecommendation();
 
-function bindInputs(): void {
+function bindAdiInputs(): void {
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-path]").forEach((control) => {
     control.addEventListener("input", () => {
       setValue(control.dataset.path ?? "", control);
@@ -380,9 +431,45 @@ function bindInputs(): void {
   bindCheckbox("carbonPotentialControl", (checked) => {
     state.equipment.carbonPotentialControl = checked;
   });
+}
 
-  bindHelpButtons();
-  bindSettings();
+function bindProcessTabs(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-process-mode]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const modeId = button.dataset.processMode as ProcessModeId | undefined;
+      if (!modeId || modeId === activeModeId) {
+        return;
+      }
+
+      activeModeId = modeId;
+      renderProcessTabs();
+      renderWorkspace();
+    });
+  });
+}
+
+function renderProcessTabs(): void {
+  const tabs = document.querySelector<HTMLElement>(".process-tabs");
+  if (!tabs) {
+    return;
+  }
+
+  tabs.innerHTML = processTabs();
+  bindProcessTabs();
+}
+
+function renderWorkspace(): void {
+  const mode = getProcessMode(activeModeId);
+  workspaceEl.innerHTML = mode.status === "implemented"
+    ? adiWorkspace()
+    : plannedWorkspace(mode);
+
+  if (mode.id === "adi") {
+    bindAdiInputs();
+    bindHelpButtons();
+    syncUnitControls();
+    renderRecommendation();
+  }
 }
 
 function bindCheckbox(id: string, update: (checked: boolean) => void): void {
@@ -530,6 +617,11 @@ function assignNumeric(path: string, value: number | undefined): void {
 }
 
 function renderRecommendation(): void {
+  const recommendationPanel = document.querySelector<HTMLDivElement>("#recommendation");
+  if (!recommendationPanel) {
+    return;
+  }
+
   try {
     const result = recommendAdiProcess(state, calibration);
     const confidenceClass = `confidence-${result.confidence}`;
@@ -714,12 +806,13 @@ function numberField(
 ): string {
   const displayValue = toDisplayValue(id, value, unitSystem);
   const displayUnit = unitLabelForPath(id, unitSystem, unit);
+  const minAttribute = id.startsWith("composition.") ? ` min="0"` : "";
 
   return `
     <label class="field">
       ${fieldLabel(label, helpKey)}
       <div class="unit-input">
-        <input data-path="${id}" type="number" value="${formatNumber(displayValue)}" step="${step}" />
+        <input data-path="${id}" type="number" value="${formatNumber(displayValue)}" step="${step}"${minAttribute} />
         ${displayUnit ? `<span data-unit-for="${id}">${displayUnit}</span>` : ""}
       </div>
     </label>

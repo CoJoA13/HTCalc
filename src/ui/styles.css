@@ -92,6 +92,28 @@ select {
   font-weight: 700;
 }
 
+.process-tab.is-planned:not(.is-active) {
+  color: #526074;
+  background: #f8fafc;
+}
+
+.process-tab span {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: #e9eef5;
+  color: #526074;
+  font-size: 11px;
+  font-weight: 780;
+}
+
+.process-tab.is-active span {
+  background: rgb(255 255 255 / 20%);
+  color: #ffffff;
+}
+
 .process-tab:disabled {
   color: #98a3b3;
   background: #f8fafc;
@@ -141,6 +163,56 @@ select {
   overflow: auto;
   padding: 18px;
   background: #ffffff;
+}
+
+.planned-pane {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-height: calc(100vh - 66px);
+  padding: 28px;
+  background: #fbfcfd;
+}
+
+.planned-header,
+.planned-body {
+  max-width: 760px;
+}
+
+.planned-header {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.planned-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid #c9d3df;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f766e;
+  font-size: 22px;
+}
+
+.planned-header h1 {
+  margin: 4px 0 7px;
+  color: #172033;
+  font-size: 28px;
+}
+
+.planned-header p {
+  margin: 0;
+  color: #526074;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.planned-body {
+  padding: 16px 0;
+  border-top: 1px solid #dbe3ec;
 }
 
 .section-block {

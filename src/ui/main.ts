@@ -806,12 +806,13 @@ function numberField(
 ): string {
   const displayValue = toDisplayValue(id, value, unitSystem);
   const displayUnit = unitLabelForPath(id, unitSystem, unit);
+  const minAttribute = id.startsWith("composition.") ? ` min="0"` : "";
 
   return `
     <label class="field">
       ${fieldLabel(label, helpKey)}
       <div class="unit-input">
-        <input data-path="${id}" type="number" value="${formatNumber(displayValue)}" step="${step}" />
+        <input data-path="${id}" type="number" value="${formatNumber(displayValue)}" step="${step}"${minAttribute} />
         ${displayUnit ? `<span data-unit-for="${id}">${displayUnit}</span>` : ""}
       </div>
     </label>

@@ -21,6 +21,11 @@ describe("UI view model helpers", () => {
     expect(parseNumericInputValue("geometry.criticalSectionMm", "50.8", "metric")).toBeCloseTo(50.8);
   });
 
+  it("clamps negative composition inputs to zero for UI entry", () => {
+    expect(parseNumericInputValue("composition.Mo", "-0.2", "imperial")).toBe(0);
+    expect(parseNumericInputValue("composition.C", "-1", "metric")).toBe(0);
+  });
+
   it("labels processing window badges from computed status", () => {
     expect(windowStatusBadge("robust")).toEqual({ label: "OK", className: "status-robust" });
     expect(windowStatusBadge("narrow")).toEqual({ label: "Narrow", className: "status-narrow" });

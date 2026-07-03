@@ -7,6 +7,10 @@ const OPTIONAL_NUMERIC_PATHS = new Set([
   "microstructure.nodularityPercent",
 ]);
 
+function isCompositionPath(path: string): boolean {
+  return path.startsWith("composition.");
+}
+
 export interface StatusBadge {
   readonly label: string;
   readonly className: string;
@@ -21,7 +25,8 @@ export function parseNumericInputValue(
     return OPTIONAL_NUMERIC_PATHS.has(path) ? undefined : Number.NaN;
   }
 
-  return toMetricValue(path, Number(rawValue), unitSystem);
+  const value = toMetricValue(path, Number(rawValue), unitSystem);
+  return isCompositionPath(path) ? Math.max(0, value) : value;
 }
 
 export function windowStatusBadge(status: ProcessingWindowStatus): StatusBadge {

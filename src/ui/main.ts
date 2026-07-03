@@ -21,6 +21,12 @@ import {
   type ProcessModeId,
 } from "./process-modes.js";
 import {
+  createProjectState,
+  parseProjectState,
+  serializeProjectState,
+  type HtcalcProjectState,
+} from "./project-state.js";
+import {
   isUnitSensitivePath,
   temperatureNominalLabel,
   temperatureRangeLabel,
@@ -219,11 +225,14 @@ app.innerHTML = `
       ${processTabs()}
     </nav>
     <div class="header-actions">
-      <button class="icon-button" type="button" title="Load project"><i class="ph ph-folder-open"></i></button>
-      <button class="icon-button" type="button" title="Save project"><i class="ph ph-floppy-disk"></i></button>
+      <button class="icon-button" id="load-project" type="button" title="Load project"><i class="ph ph-folder-open"></i></button>
+      <button class="icon-button" id="save-project" type="button" title="Save project"><i class="ph ph-floppy-disk"></i></button>
       <button class="primary-action" id="settings-open" type="button"><i class="ph ph-sliders-horizontal"></i> Settings</button>
     </div>
   </header>
+
+  <input id="project-file-input" class="file-input" type="file" accept=".json,.htcalc.json,application/json" />
+  <div class="project-status" id="project-status" role="status" aria-live="polite"></div>
 
   <main class="workspace" id="workspace">
     ${adiWorkspace()}
@@ -411,6 +420,7 @@ const workspaceEl = workspaceRoot;
 bindProcessTabs();
 bindAdiInputs();
 bindHelpButtons();
+bindProjectActions();
 bindSettings();
 renderRecommendation();
 
@@ -487,6 +497,86 @@ function bindHelpButtons(): void {
       event.stopPropagation();
     });
   });
+}
+
+function bindProjectActions(): void {
+  const fileInput = document.querySelector<HTMLInputElement>("#project-file-input");
+
+  document.querySelector<HTMLButtonElement>("#save-project")?.addEventListener("click", () => {
+    saveProject();
+  });
+
+  document.querySelector<HTMLButtonElement>("#load-project")?.addEventListener("click", () => {
+    fileInput?.click();
+  });
+
+  fileInput?.addEventListener("change", async () => {
+    const file = fileInput.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    try {
+      const project = parseProjectState(await file.text());
+      restoreProject(project);
+      showProjectStatus("Project loaded.");
+    } catch (error) {
+      showProjectStatus(error instanceof Error ? error.message : "Could not load project.", true);
+    } finally {
+      fileInput.value = "";
+    }
+  });
+}
+
+function saveProject(): void {
+  const project = createProjectState({
+    activeModeId,
+    unitSystem,
+    adiInput: state,
+    adiCalibration: calibration,
+  });
+  const blob = new Blob([serializeProjectState(project)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `htcalc-project-${new Date().toISOString().slice(0, 10)}.htcalc.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showProjectStatus("Project saved.");
+}
+
+function restoreProject(project: HtcalcProjectState): void {
+  activeModeId = project.activeModeId;
+  unitSystem = project.unitSystem;
+  calibration = { ...project.adi.calibration };
+  replaceAdiInput(project.adi.input);
+
+  renderProcessTabs();
+  renderWorkspace();
+  syncCalibrationControls();
+  syncUnitPreferenceControls();
+  syncUnitControls();
+  renderRecommendation();
+}
+
+function replaceAdiInput(input: AdiProcessInput): void {
+  Object.assign(state.composition, input.composition);
+  Object.assign(state.geometry, input.geometry);
+  Object.assign(state.microstructure, input.microstructure);
+  Object.assign(state.target, input.target);
+  Object.assign(state.equipment, input.equipment);
+}
+
+function showProjectStatus(message: string, isError = false): void {
+  const status = document.querySelector<HTMLDivElement>("#project-status");
+  if (!status) {
+    return;
+  }
+
+  status.textContent = message;
+  status.classList.toggle("is-error", isError);
 }
 
 function bindSettings(): void {

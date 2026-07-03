@@ -781,6 +781,14 @@ function renderWorkspace(): void {
   }
 }
 
+function renderActiveRecommendation(): void {
+  if (activeModeId === "adi") {
+    renderRecommendation();
+  } else {
+    renderSteelRecommendation(activeModeId);
+  }
+}
+
 function workspaceForMode(mode: ProcessMode): string {
   switch (mode.id) {
     case "adi":
@@ -882,7 +890,7 @@ function restoreProject(project: HtcalcProjectState): void {
   syncCalibrationControls();
   syncUnitPreferenceControls();
   syncUnitControls();
-  renderRecommendation();
+  renderActiveRecommendation();
 }
 
 function replaceAdiInput(input: AdiProcessInput): void {
@@ -945,7 +953,7 @@ function bindSettings(): void {
     syncCalibrationControls();
     syncUnitPreferenceControls();
     syncUnitControls();
-    renderRecommendation();
+    renderActiveRecommendation();
   });
 
   document.querySelectorAll<HTMLInputElement>("[data-calibration]").forEach((control) => {
@@ -960,7 +968,7 @@ function bindSettings(): void {
         [key]: Number(control.value),
       };
       syncCalibrationControls(key);
-      renderRecommendation();
+      renderActiveRecommendation();
     });
   });
 
@@ -972,7 +980,7 @@ function bindSettings(): void {
 
       unitSystem = control.value as UnitSystem;
       syncUnitControls();
-      renderRecommendation();
+      renderActiveRecommendation();
     });
   });
 }
@@ -1076,6 +1084,7 @@ function parseSteelNumericInputValue(path: string, displayValue: string): number
 
 function isOptionalSteelNumericPath(path: string): boolean {
   return [
+    "geometry.estimatedMassKg",
     "austemper.bathTemperatureC",
     "austemper.maxHoldMin",
     "martemper.bathTemperatureC",

@@ -86,4 +86,45 @@ describe("martempering recommendation", () => {
 
     expect(result.warnings.join(" ")).toMatch(/retained austenite/i);
   });
+
+  it("rejects equalization caps below the minimum window", () => {
+    expect(() => recommendMartemperingProcess({
+      ...input,
+      martemper: {
+        ...input.martemper,
+        maxEqualizationMin: 1,
+      },
+    })).toThrow(/martemper\.maxEqualizationMin/);
+  });
+
+  it("preserves required multiple-temper recommendations", () => {
+    const result = recommendMartemperingProcess({
+      ...input,
+      composition: {
+        ...input.composition,
+        C: 0.95,
+      },
+      martemper: {
+        ...input.martemper,
+        temperCount: 1,
+      },
+    });
+
+    expect(result.temper.temperCount).toBe(2);
+  });
+
+  it("downgrades confidence for air austenitizing risk", () => {
+    const result = recommendMartemperingProcess({
+      ...input,
+      equipment: {
+        ...input.equipment,
+        furnaceType: "air",
+        atmosphereType: "air",
+      },
+    });
+
+    expect(result.processingWindowStatus).toBe("narrow");
+    expect(result.confidence).toBe("yellow");
+    expect(result.warnings.join(" ")).toMatch(/Atmosphere risk/);
+  });
 });

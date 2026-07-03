@@ -15,8 +15,8 @@ import type {
   SteelTransformationEstimate,
 } from "./types.js";
 
-function invalidAustemperInput(fieldPath: string): RangeError {
-  return new RangeError(`Invalid steel austempering input: ${fieldPath} must be a finite non-negative number`);
+function invalidAustemperInput(fieldPath: string, requirement = "a finite non-negative number"): RangeError {
+  return new RangeError(`Invalid steel austempering input: ${fieldPath} must be ${requirement}`);
 }
 
 function requestedBathTemperature(input: SteelAustemperingInput): number | undefined {
@@ -27,6 +27,19 @@ function requestedBathTemperature(input: SteelAustemperingInput): number | undef
 
   if (!Number.isFinite(requested) || requested < 0) {
     throw invalidAustemperInput("austemper.bathTemperatureC");
+  }
+
+  return requested;
+}
+
+function maxHoldMin(input: SteelAustemperingInput): number | undefined {
+  const requested = input.austemper.maxHoldMin;
+  if (requested === undefined) {
+    return undefined;
+  }
+
+  if (!Number.isFinite(requested) || requested <= 0) {
+    throw invalidAustemperInput("austemper.maxHoldMin", "a finite positive number");
   }
 
   return requested;
@@ -127,6 +140,7 @@ export function recommendSteelAustemperingProcess(
   const transformation = estimateSteelTransformation(input);
   const requestedBathC = requestedBathTemperature(input);
   const bathTemperatureC = requestedBathC ?? defaultBathTemperatureC(input, transformation);
+  const requestedMaxHoldMin = maxHoldMin(input);
   const warnings = [...transformation.warnings];
   let status: ProcessingWindowStatus = "robust";
   let confidence: ConfidenceLevel = "green";
@@ -167,9 +181,14 @@ export function recommendSteelAustemperingProcess(
     }
   }
 
+  if (transformation.warnings.some((warning) => warning.startsWith("Atmosphere risk")) && status !== "invalid") {
+    status = "narrow";
+    confidence = "yellow";
+  }
+
   const holdMin = estimateAustemperHoldMin(input, bathTemperatureC);
-  const holdMax = input.austemper.maxHoldMin && Number.isFinite(input.austemper.maxHoldMin)
-    ? Math.max(input.austemper.maxHoldMin, holdMin)
+  const holdMax = requestedMaxHoldMin !== undefined
+    ? Math.max(requestedMaxHoldMin, holdMin)
     : holdMin * 2.1;
   const expectedHardness = estimateAustemperedHardness(input, bathTemperatureC);
 
@@ -178,7 +197,7 @@ export function recommendSteelAustemperingProcess(
     transformation,
     austenitize: recommendAustenitize(input),
     austemper: {
-      temperature: makeTemperatureWindow(bathTemperatureC, 15, 180, 450),
+      temperature: makeTemperatureWindow(bathTemperatureC, 15, 0, 450),
       holdAfterCoreAtTemp: {
         minMin: round(holdMin),
         nominalMin: round((holdMin + holdMax) / 2),

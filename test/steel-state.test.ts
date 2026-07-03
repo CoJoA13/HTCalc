@@ -26,6 +26,14 @@ describe("steel UI state helpers", () => {
     expect(input.austemper.bainiteTarget).toBe("upper");
   });
 
+  it("clears optional estimated mass without storing NaN", () => {
+    const input = defaultSteelAustemperingInput();
+
+    setSteelAustemperingInputValue(input, "geometry.estimatedMassKg", undefined);
+
+    expect(input.geometry.estimatedMassKg).toBeUndefined();
+  });
+
   it("updates martempering target and tempering paths", () => {
     const input = defaultMartemperingInput();
 

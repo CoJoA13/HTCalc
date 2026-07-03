@@ -79,6 +79,47 @@ describe("steel austempering recommendation", () => {
     expect(result.warnings.join(" ")).toMatch(/below estimated Ms/);
   });
 
+  it("does not hide a low bainite-start estimate behind a display clamp", () => {
+    const result = recommendSteelAustemperingProcess({
+      ...input,
+      composition: {
+        ...input.composition,
+        C: 1.1,
+        Mn: 2,
+        Ni: 2,
+        Cr: 2,
+        Mo: 1,
+      },
+    });
+
+    expect(result.austemper.temperature.nominalC).toBeLessThan(result.transformation.bainiteStartC);
+  });
+
+  it("rejects invalid maximum hold constraints", () => {
+    expect(() => recommendSteelAustemperingProcess({
+      ...input,
+      austemper: {
+        ...input.austemper,
+        maxHoldMin: 0,
+      },
+    })).toThrow(/austemper\.maxHoldMin/);
+  });
+
+  it("downgrades confidence for air austenitizing risk", () => {
+    const result = recommendSteelAustemperingProcess({
+      ...input,
+      equipment: {
+        ...input.equipment,
+        furnaceType: "air",
+        atmosphereType: "air",
+      },
+    });
+
+    expect(result.processingWindowStatus).toBe("narrow");
+    expect(result.confidence).toBe("yellow");
+    expect(result.warnings.join(" ")).toMatch(/Atmosphere risk/);
+  });
+
   it("generates validation checks for trial qualification", () => {
     const result = recommendSteelAustemperingProcess(input);
 

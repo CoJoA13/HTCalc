@@ -69,6 +69,24 @@ describe("shared steel core", () => {
     })).toThrow(/geometry\.criticalSectionMm/);
   });
 
+  it("rejects invalid enum-like fields before scoring", () => {
+    expect(() => estimateSteelTransformation({
+      ...baseSteel,
+      equipment: {
+        ...baseSteel.equipment,
+        quenchMedium: "lava" as SteelBaseInput["equipment"]["quenchMedium"],
+      },
+    })).toThrow(/equipment\.quenchMedium/);
+
+    expect(() => validateSteelInput({
+      ...baseSteel,
+      target: {
+        ...baseSteel.target,
+        priority: "speed" as SteelBaseInput["target"]["priority"],
+      },
+    })).toThrow(/target\.priority/);
+  });
+
   it("estimates as-quenched hardness lower when hardenability is insufficient", () => {
     const good = estimateAsQuenchedHardness(baseSteel);
     const weak = estimateAsQuenchedHardness({

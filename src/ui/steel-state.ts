@@ -165,7 +165,11 @@ function setSteelBaseValue(
   }
 
   if (group === "geometry") {
-    Object.assign(input.geometry, { [key as SteelGeometryKey]: numericValue(value) });
+    if (key === "estimatedMassKg") {
+      assignOptionalNumber(input.geometry, "estimatedMassKg", value);
+    } else {
+      Object.assign(input.geometry, { [key as SteelGeometryKey]: numericValue(value) });
+    }
     return true;
   }
 

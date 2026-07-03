@@ -20,8 +20,62 @@ export const STEEL_COMPOSITION_KEYS = [
   "B",
 ] as const satisfies readonly (keyof SteelComposition)[];
 
+const STEEL_STARTING_CONDITIONS = [
+  "normalized",
+  "annealed",
+  "spheroidized",
+  "quenched-tempered",
+  "hot-rolled",
+  "unknown",
+] as const;
+
+const STEEL_PRIORITIES = [
+  "hardness",
+  "toughness",
+  "distortion",
+  "wear",
+  "fatigue",
+] as const;
+
+const STEEL_FURNACE_TYPES = [
+  "controlled-atmosphere",
+  "air",
+  "vacuum",
+  "inert",
+  "salt",
+] as const;
+
+const STEEL_ATMOSPHERE_TYPES = [
+  "endothermic-neutral",
+  "nitrogen-methanol",
+  "vacuum",
+  "inert",
+  "air",
+  "salt",
+  "unknown",
+] as const;
+
+const STEEL_QUENCH_MEDIA = [
+  "water",
+  "oil",
+  "polymer",
+  "salt",
+  "hot-oil",
+  "air",
+  "furnace",
+  "other",
+] as const;
+
+const STEEL_AGITATION_LEVELS = ["poor", "fair", "good"] as const;
+
 function invalidInput(fieldPath: string, requirement: string): RangeError {
   return new RangeError(`Invalid steel input: ${fieldPath} must be ${requirement}`);
+}
+
+function assertEnum(value: unknown, fieldPath: string, allowedValues: readonly string[]): void {
+  if (typeof value !== "string" || !allowedValues.includes(value)) {
+    throw invalidInput(fieldPath, `one of ${allowedValues.join(", ")}`);
+  }
 }
 
 function assertFiniteNonNegative(value: number, fieldPath: string): void {
@@ -87,6 +141,17 @@ export function makeTimeWindow(
 }
 
 export function validateSteelInput(input: SteelBaseInput): void {
+  assertEnum(input.startingCondition, "startingCondition", STEEL_STARTING_CONDITIONS);
+  assertEnum(input.target.priority, "target.priority", STEEL_PRIORITIES);
+  assertEnum(input.equipment.furnaceType, "equipment.furnaceType", STEEL_FURNACE_TYPES);
+  assertEnum(input.equipment.atmosphereType, "equipment.atmosphereType", STEEL_ATMOSPHERE_TYPES);
+  assertEnum(input.equipment.quenchMedium, "equipment.quenchMedium", STEEL_QUENCH_MEDIA);
+  assertEnum(input.equipment.agitation, "equipment.agitation", STEEL_AGITATION_LEVELS);
+
+  if (typeof input.equipment.carbonProtection !== "boolean") {
+    throw invalidInput("equipment.carbonProtection", "a boolean");
+  }
+
   for (const field of STEEL_COMPOSITION_KEYS) {
     assertFiniteNonNegative(input.composition[field], `composition.${field}`);
   }

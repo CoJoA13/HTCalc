@@ -48,9 +48,9 @@ function validateMartemperingFields(input: MartemperingInput): void {
 
   if (
     input.martemper.maxEqualizationMin !== undefined &&
-    (!Number.isFinite(input.martemper.maxEqualizationMin) || input.martemper.maxEqualizationMin <= 0)
+    (!Number.isFinite(input.martemper.maxEqualizationMin) || input.martemper.maxEqualizationMin < 3)
   ) {
-    throw invalidMartemperInput("martemper.maxEqualizationMin", "a finite positive number");
+    throw invalidMartemperInput("martemper.maxEqualizationMin", "a finite number at least 3");
   }
 }
 
@@ -76,7 +76,7 @@ function temperWithRequestedHold(
   return {
     ...baseTemper,
     hold: makeTimeWindow(input.martemper.temperHoldMin, 30, 30, 300),
-    temperCount: input.martemper.temperCount,
+    temperCount: Math.max(input.martemper.temperCount, baseTemper.temperCount),
   };
 }
 
@@ -135,6 +135,11 @@ export function recommendMartemperingProcess(input: MartemperingInput): Martempe
       status = "narrow";
       confidence = "yellow";
     }
+  }
+
+  if (transformation.warnings.some((warning) => warning.startsWith("Atmosphere risk")) && status !== "invalid") {
+    status = "narrow";
+    confidence = "yellow";
   }
 
   const asQuenchedHardness = estimateAsQuenchedHardness(input);

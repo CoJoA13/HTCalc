@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import * as adi from "../src/adi/index.js";
-import { ASTM_A897_GRADES, getGradeData, recommendAdiProcess } from "../src/adi/index.js";
+import {
+  ASTM_A897_GRADES,
+  DEFAULT_ADI_MODEL_CALIBRATION,
+  getGradeData,
+  recommendAdiProcess,
+} from "../src/adi/index.js";
 
 const baseInput = {
   composition: {
@@ -91,6 +96,34 @@ describe("recommendAdiProcess", () => {
     const result = recommendAdiProcess(baseInput);
 
     expect(result.expectedGrade).toBe("150-110-07");
+  });
+
+  it("keeps default calibration behavior unchanged", () => {
+    const implicitDefault = recommendAdiProcess(baseInput);
+    const explicitDefault = recommendAdiProcess(baseInput, DEFAULT_ADI_MODEL_CALIBRATION);
+
+    expect(explicitDefault).toEqual(implicitDefault);
+  });
+
+  it("applies equipment calibration scales to derived recommendations", () => {
+    const base = recommendAdiProcess(baseInput);
+    const tuned = recommendAdiProcess(baseInput, {
+      holdTimeScale: 1.25,
+      carbideSegregationScale: 1.3,
+    });
+
+    expect(tuned.austemper.holdAfterCoreAtTemp.minMin).toBeGreaterThan(
+      base.austemper.holdAfterCoreAtTemp.minMin,
+    );
+    expect(tuned.scores.carbideSegregationRisk).toBeGreaterThan(
+      base.scores.carbideSegregationRisk,
+    );
+  });
+
+  it("rejects invalid calibration scales with the field path", () => {
+    expect(() => recommendAdiProcess(baseInput, { holdTimeScale: 0 })).toThrow(
+      /calibration\.holdTimeScale/,
+    );
   });
 });
 

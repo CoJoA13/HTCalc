@@ -92,6 +92,17 @@ export interface AdiProcessInput {
   equipment: EquipmentProfile;
 }
 
+export interface AdiModelCalibration {
+  readonly alloyAustemperabilityScale: number;
+  readonly sectionPenaltyScale: number;
+  readonly transferPenaltyScale: number;
+  readonly agitationPenaltyScale: number;
+  readonly carbideSegregationScale: number;
+  readonly temperatureAdjustmentScale: number;
+  readonly soakTimeScale: number;
+  readonly holdTimeScale: number;
+}
+
 export interface AstmGradeData {
   readonly grade: AstmA897Grade;
   readonly gradeIndex: 1 | 2 | 3 | 4 | 5 | 6;

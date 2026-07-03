@@ -1,5 +1,6 @@
 import { getGradeData, THRESHOLDS } from "./data.js";
 import type {
+  AdiModelCalibration,
   AdiProcessInput,
   AdiProcessRecommendation,
   AdiScores,
@@ -20,6 +21,17 @@ const AUSTEMPER_BASE_TEMPERATURE_C = {
 } as const satisfies Record<AstmGradeData["gradeIndex"], number>;
 
 const COMPOSITION_FIELDS = ["C", "Si", "Mn", "Cu", "Ni", "Mo", "Cr", "Mg", "P", "S"] as const;
+
+export const DEFAULT_ADI_MODEL_CALIBRATION: AdiModelCalibration = Object.freeze({
+  alloyAustemperabilityScale: 1,
+  sectionPenaltyScale: 1,
+  transferPenaltyScale: 1,
+  agitationPenaltyScale: 1,
+  carbideSegregationScale: 1,
+  temperatureAdjustmentScale: 1,
+  soakTimeScale: 1,
+  holdTimeScale: 1,
+});
 
 function invalidInput(fieldPath: string, requirement: string): RangeError {
   return new RangeError(`Invalid ADI input: ${fieldPath} must be ${requirement}`);
@@ -82,6 +94,19 @@ function validateAdiProcessInput(input: AdiProcessInput): void {
       "microstructure.nodularityPercent",
     );
   }
+}
+
+function resolveCalibration(calibration?: Partial<AdiModelCalibration>): AdiModelCalibration {
+  const resolved = {
+    ...DEFAULT_ADI_MODEL_CALIBRATION,
+    ...calibration,
+  };
+
+  for (const [key, value] of Object.entries(resolved)) {
+    assertFinitePositive(value, `calibration.${key}`);
+  }
+
+  return resolved;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -148,21 +173,26 @@ function sectionFactor(input: AdiProcessInput): number {
   return Math.sqrt(input.geometry.criticalSectionMm / 25);
 }
 
-function calculateAustemperabilityIndex(input: AdiProcessInput): number {
+function calculateAustemperabilityIndex(
+  input: AdiProcessInput,
+  calibration: AdiModelCalibration,
+): number {
   const { composition, equipment, geometry } = input;
   const agitationPenalty =
     equipment.bathAgitation === "poor" ? 0.4 : equipment.bathAgitation === "fair" ? 0.2 : 0;
-
-  return (
-    1.0 +
+  const alloyContribution =
     0.35 * composition.Ni +
     0.25 * composition.Cu +
     0.9 * composition.Mo +
     0.45 * composition.Mn +
-    0.6 * composition.Cr -
-    0.04 * geometry.criticalSectionMm -
-    0.02 * equipment.quenchTransferTimeSec -
-    agitationPenalty
+    0.6 * composition.Cr;
+
+  return (
+    1.0 +
+    alloyContribution * calibration.alloyAustemperabilityScale -
+    0.04 * geometry.criticalSectionMm * calibration.sectionPenaltyScale -
+    0.02 * equipment.quenchTransferTimeSec * calibration.transferPenaltyScale -
+    agitationPenalty * calibration.agitationPenaltyScale
   );
 }
 
@@ -170,10 +200,13 @@ function requiredAiForSection(sectionMm: number): number {
   return 0.25 + 0.015 * sectionMm;
 }
 
-function calculateCarbideSegregationRisk(input: AdiProcessInput): number {
+function calculateCarbideSegregationRisk(
+  input: AdiProcessInput,
+  calibration: AdiModelCalibration,
+): number {
   const { composition, geometry } = input;
 
-  return (
+  const risk =
     1.0 * composition.Mo +
     0.8 * composition.Mn +
     1.2 * composition.Cr +
@@ -181,8 +214,9 @@ function calculateCarbideSegregationRisk(input: AdiProcessInput): number {
     2.0 * composition.Mo * composition.Cr +
     1.5 * composition.Mn * composition.Cr +
     0.01 * geometry.criticalSectionMm +
-    2.0 * composition.P
-  );
+    2.0 * composition.P;
+
+  return risk * calibration.carbideSegregationScale;
 }
 
 function calculateAtmosphereRisk(input: AdiProcessInput): 0 | 1 | 2 | 3 {
@@ -213,51 +247,56 @@ function calculateAtmosphereRisk(input: AdiProcessInput): 0 | 1 | 2 | 3 {
 function calculateAustenitizeTemperatureC(
   input: AdiProcessInput,
   grade: AstmGradeData,
+  calibration: AdiModelCalibration,
 ): number {
   const { composition, microstructure, target } = input;
-  let temperatureC = 925 - 12 * (grade.gradeIndex - 1);
+  const baseTemperatureC = 925 - 12 * (grade.gradeIndex - 1);
+  let adjustmentC = 0;
 
-  temperatureC += 10 * Math.max(0, composition.Si - 2.5);
-  temperatureC += 5 * Math.max(0, sectionFactor(input) - 1);
+  adjustmentC += 10 * Math.max(0, composition.Si - 2.5);
+  adjustmentC += 5 * Math.max(0, sectionFactor(input) - 1);
 
   if (microstructure.startingMatrix === "ferritic") {
-    temperatureC += 10;
+    adjustmentC += 10;
   }
 
   if (microstructure.carbidesPresent) {
-    temperatureC += 15;
+    adjustmentC += 15;
   }
 
   if (target.dimensionalGrowthSensitive) {
-    temperatureC -= 10;
+    adjustmentC -= 10;
   }
 
-  return clamp(temperatureC, 840, 950);
+  return clamp(baseTemperatureC + adjustmentC * calibration.temperatureAdjustmentScale, 840, 950);
 }
 
-function calculateAustenitizeSoakMin(input: AdiProcessInput): number {
+function calculateAustenitizeSoakMin(
+  input: AdiProcessInput,
+  calibration: AdiModelCalibration,
+): number {
   const { composition, microstructure } = input;
   const alloyTotal =
     composition.Ni + composition.Cu + composition.Mo + composition.Mn;
-  let soakMin = 60 + 20 * Math.max(0, sectionFactor(input) - 1);
+  let adjustmentMin = 20 * Math.max(0, sectionFactor(input) - 1);
 
   if (microstructure.startingMatrix === "ferritic") {
-    soakMin += 20;
+    adjustmentMin += 20;
   }
 
   if (composition.Si > 3.0) {
-    soakMin += 15;
+    adjustmentMin += 15;
   }
 
   if (alloyTotal > 2.0) {
-    soakMin += 15;
+    adjustmentMin += 15;
   }
 
   if (microstructure.carbidesPresent) {
-    soakMin += 30;
+    adjustmentMin += 30;
   }
 
-  return clamp(soakMin, 45, 180);
+  return clamp(60 + adjustmentMin * calibration.soakTimeScale, 45, 180);
 }
 
 function calculateAustemperTemperatureC(
@@ -292,6 +331,7 @@ function calculateAustemperTemperatureC(
 function calculateAustemperHoldMin(
   input: AdiProcessInput,
   austemperTemperatureC: number,
+  calibration: AdiModelCalibration,
 ): number {
   const sectionMultiplier = Math.max(1, sectionFactor(input));
   const sectionReactionMultiplier = 1 + 0.25 * Math.max(0, sectionMultiplier - 1);
@@ -306,7 +346,8 @@ function calculateAustemperHoldMin(
     60 *
     Math.exp((385 - austemperTemperatureC) / 95) *
     sectionReactionMultiplier *
-    alloyMultiplier
+    alloyMultiplier *
+    calibration.holdTimeScale
   );
 }
 
@@ -347,16 +388,21 @@ function roundScores(scores: AdiScores): AdiScores {
   };
 }
 
-export function recommendAdiProcess(input: AdiProcessInput): AdiProcessRecommendation {
+export function recommendAdiProcess(
+  input: AdiProcessInput,
+  calibrationInput?: Partial<AdiModelCalibration>,
+): AdiProcessRecommendation {
   validateAdiProcessInput(input);
+  const calibration = resolveCalibration(calibrationInput);
 
   const grade = getGradeData(input.target.grade);
-  const carbideSegregationRisk = calculateCarbideSegregationRisk(input);
+  const carbideSegregationRisk = calculateCarbideSegregationRisk(input, calibration);
   const austenitizeTemperatureC = calculateAustenitizeTemperatureC(
     input,
     grade,
+    calibration,
   );
-  const austenitizeSoakMin = calculateAustenitizeSoakMin(input);
+  const austenitizeSoakMin = calculateAustenitizeSoakMin(input, calibration);
   const austemperTemperatureC = calculateAustemperTemperatureC(
     input,
     grade,
@@ -365,13 +411,14 @@ export function recommendAdiProcess(input: AdiProcessInput): AdiProcessRecommend
   const austemperHoldMin = calculateAustemperHoldMin(
     input,
     austemperTemperatureC,
+    calibration,
   );
   const austemperHoldMax =
     austemperHoldMin *
     (carbideSegregationRisk > THRESHOLDS.highCarbideSegregationRisk ? 1.3 : 1.8);
   const rawScores: AdiScores = {
     sectionFactor: sectionFactor(input),
-    austemperabilityIndex: calculateAustemperabilityIndex(input),
+    austemperabilityIndex: calculateAustemperabilityIndex(input, calibration),
     requiredAustemperabilityIndex: requiredAiForSection(input.geometry.criticalSectionMm),
     carbideSegregationRisk,
     atmosphereRisk: calculateAtmosphereRisk(input),

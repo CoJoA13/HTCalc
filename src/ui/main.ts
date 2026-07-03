@@ -6,6 +6,7 @@ import {
   recommendAdiProcess,
   type AdiModelCalibration,
   type AdiProcessInput,
+  type AdiProcessRecommendation,
   type AstmA897Grade,
   type AtmosphereType,
   type AustemperBathType,
@@ -14,6 +15,14 @@ import {
   type ProcessPriority,
   type StartingMatrix,
 } from "../adi/index.js";
+import {
+  reconcileValidationChecklist,
+} from "./checklist.js";
+import {
+  compareToBaseline,
+  createPinnedComparisonBaseline,
+  type ComparisonViewModel,
+} from "./comparison.js";
 import {
   getProcessMode,
   PROCESS_MODES,
@@ -25,7 +34,16 @@ import {
   parseProjectState,
   serializeProjectState,
   type HtcalcProjectState,
+  type PinnedComparisonBaseline,
+  type ProjectMetadata,
+  type ValidationChecklistState,
 } from "./project-state.js";
+import {
+  createReportViewModel,
+  reportMarkdownFilename,
+  serializeReportMarkdown,
+  type ReportViewModel,
+} from "./report.js";
 import {
   isUnitSensitivePath,
   temperatureNominalLabel,
@@ -211,6 +229,13 @@ const state: AdiProcessInput = {
 let calibration: AdiModelCalibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
 let unitSystem: UnitSystem = "imperial";
 let activeModeId: ProcessModeId = "adi";
+let projectMetadata: ProjectMetadata = {
+  customerName: "",
+  partName: "",
+  notes: "",
+};
+let validationChecklist: ValidationChecklistState = { items: [] };
+let pinnedComparisonBaseline: PinnedComparisonBaseline | null = null;
 
 app.innerHTML = `
   <header class="app-header">
@@ -277,11 +302,43 @@ app.innerHTML = `
       </div>
     </section>
   </div>
+
+  <div class="report-backdrop" id="report-backdrop" hidden>
+    <section class="report-panel" role="dialog" aria-modal="true" aria-labelledby="report-title">
+      <div class="report-toolbar">
+        <div>
+          <div class="eyebrow">Report</div>
+          <h2 id="report-title">Printable Review</h2>
+        </div>
+        <div class="report-toolbar-actions">
+          <button class="icon-button" id="report-download" type="button" title="Download Markdown">
+            <i class="ph ph-download-simple"></i>
+          </button>
+          <button class="icon-button" id="report-print" type="button" title="Print">
+            <i class="ph ph-printer"></i>
+          </button>
+          <button class="icon-button" id="report-close" type="button" title="Close report">
+            <i class="ph ph-x"></i>
+          </button>
+        </div>
+      </div>
+      <article class="report-document" id="report-document"></article>
+    </section>
+  </div>
 `;
 
 function adiWorkspace(): string {
   return `
     <section class="input-pane" aria-label="ADI inputs">
+      <div class="section-block project-details-block">
+        <div class="section-heading"><i class="ph ph-clipboard-text"></i><span>Project Details</span></div>
+        <div class="field-grid metadata-grid">
+          ${metadataField("customerName", "Customer", projectMetadata.customerName)}
+          ${metadataField("partName", "Part", projectMetadata.partName)}
+          ${metadataNotesField()}
+        </div>
+      </div>
+
       <div class="section-block">
         <div class="section-heading"><i class="ph ph-crosshair"></i><span>1. ASTM Target</span></div>
         <div class="field-grid target-grid">
@@ -422,9 +479,12 @@ bindAdiInputs();
 bindHelpButtons();
 bindProjectActions();
 bindSettings();
+bindReportDialog();
 renderRecommendation();
 
 function bindAdiInputs(): void {
+  bindMetadataInputs();
+
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-path]").forEach((control) => {
     control.addEventListener("input", () => {
       setValue(control.dataset.path ?? "", control);
@@ -440,6 +500,22 @@ function bindAdiInputs(): void {
   });
   bindCheckbox("carbonPotentialControl", (checked) => {
     state.equipment.carbonPotentialControl = checked;
+  });
+}
+
+function bindMetadataInputs(): void {
+  document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[data-metadata]").forEach((control) => {
+    control.addEventListener("input", () => {
+      const key = control.dataset.metadata as keyof ProjectMetadata | undefined;
+      if (!key) {
+        return;
+      }
+
+      projectMetadata = {
+        ...projectMetadata,
+        [key]: control.value,
+      };
+    });
   });
 }
 
@@ -534,6 +610,9 @@ function saveProject(): void {
     unitSystem,
     adiInput: state,
     adiCalibration: calibration,
+    metadata: projectMetadata,
+    validationChecklist,
+    pinnedComparisonBaseline,
   });
   const blob = new Blob([serializeProjectState(project)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
@@ -551,6 +630,13 @@ function restoreProject(project: HtcalcProjectState): void {
   activeModeId = project.activeModeId;
   unitSystem = project.unitSystem;
   calibration = { ...project.adi.calibration };
+  projectMetadata = { ...project.metadata };
+  validationChecklist = {
+    items: project.validationChecklist.items.map((item) => ({ ...item })),
+  };
+  pinnedComparisonBaseline = project.pinnedComparisonBaseline
+    ? structuredClone(project.pinnedComparisonBaseline)
+    : null;
   replaceAdiInput(project.adi.input);
 
   renderProcessTabs();
@@ -562,11 +648,19 @@ function restoreProject(project: HtcalcProjectState): void {
 }
 
 function replaceAdiInput(input: AdiProcessInput): void {
-  Object.assign(state.composition, input.composition);
-  Object.assign(state.geometry, input.geometry);
-  Object.assign(state.microstructure, input.microstructure);
-  Object.assign(state.target, input.target);
-  Object.assign(state.equipment, input.equipment);
+  replaceObject(state.composition, input.composition);
+  replaceObject(state.geometry, input.geometry);
+  replaceObject(state.microstructure, input.microstructure);
+  replaceObject(state.target, input.target);
+  replaceObject(state.equipment, input.equipment);
+}
+
+function replaceObject<T extends object>(target: T, source: T): void {
+  for (const key of Object.keys(target)) {
+    delete (target as Record<string, unknown>)[key];
+  }
+
+  Object.assign(target, source);
 }
 
 function showProjectStatus(message: string, isError = false): void {
@@ -645,6 +739,28 @@ function bindSettings(): void {
   });
 }
 
+function bindReportDialog(): void {
+  const backdrop = document.querySelector<HTMLDivElement>("#report-backdrop");
+
+  document.querySelector<HTMLButtonElement>("#report-close")?.addEventListener("click", () => {
+    closeReportDialog();
+  });
+
+  document.querySelector<HTMLButtonElement>("#report-print")?.addEventListener("click", () => {
+    window.print();
+  });
+
+  document.querySelector<HTMLButtonElement>("#report-download")?.addEventListener("click", () => {
+    downloadCurrentMarkdownReport();
+  });
+
+  backdrop?.addEventListener("click", (event) => {
+    if (event.target === backdrop) {
+      closeReportDialog();
+    }
+  });
+}
+
 function syncCalibrationControls(changedKey?: CalibrationKey): void {
   const selector = changedKey
     ? `[data-calibration="${changedKey}"]`
@@ -714,6 +830,7 @@ function renderRecommendation(): void {
 
   try {
     const result = recommendAdiProcess(state, calibration);
+    validationChecklist = reconcileValidationChecklist(validationChecklist, result.validationChecks);
     const confidenceClass = `confidence-${result.confidence}`;
     const warnings = result.warnings.length > 0
       ? result.warnings
@@ -721,6 +838,9 @@ function renderRecommendation(): void {
     const cpRange = result.austenitize.carbonPotential.rangeCarbonEquivalentPercent
       ? `${result.austenitize.carbonPotential.rangeCarbonEquivalentPercent[0].toFixed(2)}-${result.austenitize.carbonPotential.rangeCarbonEquivalentPercent[1].toFixed(2)}% C eq.`
       : "Equipment calibrated";
+    const comparison = pinnedComparisonBaseline
+      ? compareToBaseline(pinnedComparisonBaseline, result, unitSystem)
+      : null;
 
     recommendationPanel.innerHTML = `
       <div class="summary-header">
@@ -728,7 +848,20 @@ function renderRecommendation(): void {
           <div class="eyebrow">Recommended ADI Process</div>
           <h2>${result.expectedGrade}</h2>
         </div>
-        <span class="confidence ${confidenceClass}">${result.confidence}</span>
+        <div class="summary-side">
+          <span class="confidence ${confidenceClass}">${result.confidence}</span>
+          <div class="recommendation-actions">
+            <button class="icon-button" data-report-action="open" type="button" title="Open printable report">
+              <i class="ph ph-file-text"></i>
+            </button>
+            <button class="icon-button" data-report-action="print" type="button" title="Print report">
+              <i class="ph ph-printer"></i>
+            </button>
+            <button class="icon-button" data-report-action="markdown" type="button" title="Download Markdown report">
+              <i class="ph ph-download-simple"></i>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="window-group">
@@ -743,6 +876,20 @@ function renderRecommendation(): void {
         ${metric("Window", result.austemper.processingWindowStatus, "reaction")}
       </div>
 
+      <div class="result-section baseline-actions">
+        <div class="result-title"><i class="ph ph-push-pin"></i> Baseline</div>
+        <div class="baseline-action-row">
+          <button class="secondary-action" data-baseline-action="pin" type="button">
+            <i class="ph ph-push-pin"></i> Pin Baseline
+          </button>
+          <button class="secondary-action" data-baseline-action="clear" type="button" ${pinnedComparisonBaseline ? "" : "disabled"}>
+            <i class="ph ph-x-circle"></i> Clear Baseline
+          </button>
+        </div>
+      </div>
+
+      ${comparison ? comparisonPanel(comparison) : ""}
+
       <div class="result-section">
         <div class="result-title"><i class="ph ph-gauge"></i> Carbon Potential</div>
         <div class="cp-line"><strong>${cpRange}</strong><span>${result.austenitize.carbonPotential.category}</span></div>
@@ -756,9 +903,11 @@ function renderRecommendation(): void {
 
       <div class="result-section">
         <div class="result-title"><i class="ph ph-check-square"></i> Validation Checks</div>
-        <ul class="check-list">${result.validationChecks.map((check) => `<li>${check}</li>`).join("")}</ul>
+        ${validationChecklistRows()}
       </div>
     `;
+    bindRecommendationActions(result);
+    bindChecklistControls();
   } catch (error) {
     recommendationPanel.innerHTML = `
       <div class="error-state">
@@ -768,6 +917,278 @@ function renderRecommendation(): void {
       </div>
     `;
   }
+}
+
+function bindRecommendationActions(result: AdiProcessRecommendation): void {
+  document.querySelector<HTMLButtonElement>('[data-report-action="open"]')?.addEventListener("click", () => {
+    openReportDialog(result);
+  });
+
+  document.querySelector<HTMLButtonElement>('[data-report-action="print"]')?.addEventListener("click", () => {
+    openReportDialog(result);
+    requestAnimationFrame(() => {
+      window.print();
+    });
+  });
+
+  document.querySelector<HTMLButtonElement>('[data-report-action="markdown"]')?.addEventListener("click", () => {
+    downloadCurrentMarkdownReport(result);
+  });
+
+  document.querySelector<HTMLButtonElement>('[data-baseline-action="pin"]')?.addEventListener("click", () => {
+    pinnedComparisonBaseline = createPinnedComparisonBaseline({
+      input: state,
+      calibration,
+      recommendation: result,
+      label: baselineLabel(result),
+    });
+    showProjectStatus("Baseline pinned.");
+    renderRecommendation();
+  });
+
+  document.querySelector<HTMLButtonElement>('[data-baseline-action="clear"]')?.addEventListener("click", () => {
+    pinnedComparisonBaseline = null;
+    showProjectStatus("Baseline cleared.");
+    renderRecommendation();
+  });
+}
+
+function bindChecklistControls(): void {
+  document.querySelectorAll<HTMLInputElement>("[data-checklist-check]").forEach((control) => {
+    control.addEventListener("change", () => {
+      updateChecklistItem(control.dataset.checklistCheck ?? "", {
+        checked: control.checked,
+      });
+    });
+  });
+
+  document.querySelectorAll<HTMLTextAreaElement>("[data-checklist-notes]").forEach((control) => {
+    control.addEventListener("input", () => {
+      updateChecklistItem(control.dataset.checklistNotes ?? "", {
+        notes: control.value,
+      });
+    });
+  });
+}
+
+function updateChecklistItem(
+  id: string,
+  patch: Partial<Pick<ValidationChecklistState["items"][number], "checked" | "notes">>,
+): void {
+  validationChecklist = {
+    items: validationChecklist.items.map((item) =>
+      item.id === id ? { ...item, ...patch } : item
+    ),
+  };
+}
+
+function comparisonPanel(comparison: ComparisonViewModel): string {
+  const summary = comparison.summary.length > 0
+    ? `<ul class="comparison-summary">${comparison.summary.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+    : "";
+
+  return `
+    <div class="result-section comparison-section">
+      <div class="result-title"><i class="ph ph-arrows-left-right"></i> Current vs Pinned</div>
+      <div class="comparison-meta">
+        <strong>${escapeHtml(comparison.label)}</strong>
+        <span>${escapeHtml(comparison.pinnedAt)}</span>
+      </div>
+      ${summary}
+      <div class="comparison-table" role="table" aria-label="Current versus pinned baseline">
+        <div class="comparison-row comparison-head" role="row">
+          <span>Metric</span><span>Baseline</span><span>Current</span><span>Delta</span>
+        </div>
+        ${comparison.rows.map((row) => `
+          <div class="comparison-row" role="row">
+            <span>${escapeHtml(row.label)}</span>
+            <span>${escapeHtml(row.baselineValue)}</span>
+            <span>${escapeHtml(row.currentValue)}</span>
+            <span>${escapeHtml(row.delta)}</span>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function validationChecklistRows(): string {
+  if (validationChecklist.items.length === 0) {
+    return `<p class="empty-note">No validation checks generated.</p>`;
+  }
+
+  return `
+    <div class="validation-list">
+      ${validationChecklist.items.map((item) => `
+        <div class="validation-item">
+          <label>
+            <input
+              data-checklist-check="${escapeAttribute(item.id)}"
+              type="checkbox"
+              ${item.checked ? "checked" : ""}
+            />
+            <span>${escapeHtml(item.label)}</span>
+          </label>
+          <textarea
+            data-checklist-notes="${escapeAttribute(item.id)}"
+            aria-label="Notes for ${escapeAttribute(item.label)}"
+            rows="2"
+          >${escapeHtml(item.notes)}</textarea>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function baselineLabel(result: AdiProcessRecommendation): string {
+  const projectLabel = projectMetadata.partName.trim() || projectMetadata.customerName.trim();
+  return `${projectLabel || result.expectedGrade} baseline`;
+}
+
+function currentReportViewModel(result?: AdiProcessRecommendation): ReportViewModel {
+  const recommendation = result ?? recommendAdiProcess(state, calibration);
+  validationChecklist = reconcileValidationChecklist(validationChecklist, recommendation.validationChecks);
+  const comparison = pinnedComparisonBaseline
+    ? compareToBaseline(pinnedComparisonBaseline, recommendation, unitSystem)
+    : null;
+  const baseReport = {
+    activeModeLabel: getProcessMode("adi").label,
+    unitSystem,
+    exportedAt: new Date().toISOString(),
+    metadata: projectMetadata,
+    input: state,
+    calibration,
+    recommendation,
+    validationChecklist,
+  };
+
+  return comparison
+    ? createReportViewModel({ ...baseReport, comparison })
+    : createReportViewModel(baseReport);
+}
+
+function openReportDialog(result?: AdiProcessRecommendation): void {
+  try {
+    const report = currentReportViewModel(result);
+    const documentEl = document.querySelector<HTMLElement>("#report-document");
+    const backdrop = document.querySelector<HTMLDivElement>("#report-backdrop");
+    if (!documentEl || !backdrop) {
+      return;
+    }
+
+    documentEl.innerHTML = reportHtml(report);
+    backdrop.hidden = false;
+    document.body.classList.add("is-report-open");
+  } catch (error) {
+    showProjectStatus(error instanceof Error ? error.message : "Could not create report.", true);
+  }
+}
+
+function closeReportDialog(): void {
+  const backdrop = document.querySelector<HTMLDivElement>("#report-backdrop");
+  if (backdrop) {
+    backdrop.hidden = true;
+  }
+  document.body.classList.remove("is-report-open");
+}
+
+function downloadCurrentMarkdownReport(result?: AdiProcessRecommendation): void {
+  try {
+    const report = currentReportViewModel(result);
+    const blob = new Blob([serializeReportMarkdown(report)], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = reportMarkdownFilename(projectMetadata, report.exportedAt);
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showProjectStatus("Markdown report downloaded.");
+  } catch (error) {
+    showProjectStatus(error instanceof Error ? error.message : "Could not download report.", true);
+  }
+}
+
+function reportHtml(report: ReportViewModel): string {
+  const warnings = report.recommendation.warnings.length > 0
+    ? report.recommendation.warnings
+    : ["No active risk warnings for the current input set."];
+  const notes = report.metadata.notes.trim() || "No project notes entered.";
+
+  return `
+    <header class="report-document-header">
+      <h1>${escapeHtml(report.title)}</h1>
+      <dl>
+        <div><dt>Generated</dt><dd>${escapeHtml(report.exportedAt)}</dd></div>
+        <div><dt>Customer</dt><dd>${escapeHtml(report.metadata.customerName || "Unspecified")}</dd></div>
+        <div><dt>Part</dt><dd>${escapeHtml(report.metadata.partName || "Unspecified")}</dd></div>
+        <div><dt>Grade</dt><dd>${escapeHtml(report.input.target.grade)}</dd></div>
+      </dl>
+    </header>
+    <section>
+      <h2>Project Notes</h2>
+      <p>${escapeHtml(notes)}</p>
+    </section>
+    <section>
+      <h2>Process Windows</h2>
+      <ul>
+        <li><strong>Austenitize:</strong> ${temperatureRangeLabel(report.recommendation.austenitize.temperature, report.unitSystem)}, nominal ${temperatureNominalLabel(report.recommendation.austenitize.temperature, report.unitSystem)}, soak ${report.recommendation.austenitize.soakAfterCoreAtTemp.minMin}-${report.recommendation.austenitize.soakAfterCoreAtTemp.maxMin} min</li>
+        <li><strong>Austemper:</strong> ${temperatureRangeLabel(report.recommendation.austemper.temperature, report.unitSystem)}, nominal ${temperatureNominalLabel(report.recommendation.austemper.temperature, report.unitSystem)}, hold ${report.recommendation.austemper.holdAfterCoreAtTemp.minMin}-${report.recommendation.austemper.holdAfterCoreAtTemp.maxMin} min</li>
+        <li><strong>Transfer:</strong> actual ${report.recommendation.transfer.actualTransferTimeSec} s, max ${report.recommendation.transfer.maxRecommendedTransferTimeSec} s</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Scores</h2>
+      <dl class="report-scores">
+        <div><dt>Confidence</dt><dd>${escapeHtml(report.recommendation.confidence)}</dd></div>
+        <div><dt>AI</dt><dd>${report.recommendation.scores.austemperabilityIndex.toFixed(2)}</dd></div>
+        <div><dt>Required AI</dt><dd>${report.recommendation.scores.requiredAustemperabilityIndex.toFixed(2)}</dd></div>
+        <div><dt>CSR</dt><dd>${report.recommendation.scores.carbideSegregationRisk.toFixed(2)}</dd></div>
+      </dl>
+    </section>
+    ${report.comparison ? reportComparisonHtml(report.comparison) : ""}
+    <section>
+      <h2>Warnings</h2>
+      <ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+    </section>
+    <section>
+      <h2>Validation Checklist</h2>
+      <ul class="report-checklist">
+        ${report.validationChecklist.items.map((item) => `
+          <li>
+            <span>${item.checked ? "Checked" : "Open"}</span>
+            ${escapeHtml(item.label)}
+            ${item.notes.trim() ? `<em>Notes: ${escapeHtml(item.notes.trim())}</em>` : ""}
+          </li>
+        `).join("")}
+      </ul>
+    </section>
+  `;
+}
+
+function reportComparisonHtml(comparison: ComparisonViewModel): string {
+  return `
+    <section>
+      <h2>Current vs Pinned</h2>
+      <p><strong>${escapeHtml(comparison.label)}</strong> ${escapeHtml(comparison.pinnedAt)}</p>
+      <table>
+        <thead>
+          <tr><th>Metric</th><th>Baseline</th><th>Current</th><th>Delta</th></tr>
+        </thead>
+        <tbody>
+          ${comparison.rows.map((row) => `
+            <tr>
+              <td>${escapeHtml(row.label)}</td>
+              <td>${escapeHtml(row.baselineValue)}</td>
+              <td>${escapeHtml(row.currentValue)}</td>
+              <td>${escapeHtml(row.delta)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </section>
+  `;
 }
 
 function settingsFields(): string {
@@ -867,6 +1288,24 @@ function helpButton(helpKey: string): string {
   `;
 }
 
+function metadataField(key: keyof ProjectMetadata, label: string, value: string): string {
+  return `
+    <label class="field">
+      <span class="field-label">${label}</span>
+      <input data-metadata="${key}" type="text" value="${escapeAttribute(value)}" />
+    </label>
+  `;
+}
+
+function metadataNotesField(): string {
+  return `
+    <label class="field metadata-notes-field">
+      <span class="field-label">Notes</span>
+      <textarea data-metadata="notes" rows="3">${escapeHtml(projectMetadata.notes)}</textarea>
+    </label>
+  `;
+}
+
 function selectField(
   id: string,
   label: string,
@@ -953,4 +1392,27 @@ function metric(label: string, value: string, hint: string, helpKey?: string): s
       <em>${hint}</em>
     </div>
   `;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case "\"":
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return character;
+    }
+  });
+}
+
+function escapeAttribute(value: string): string {
+  return escapeHtml(value);
 }

@@ -2,7 +2,9 @@ import "@phosphor-icons/web/regular";
 import "../ui/styles.css";
 import {
   ASTM_A897_GRADES,
+  DEFAULT_ADI_MODEL_CALIBRATION,
   recommendAdiProcess,
+  type AdiModelCalibration,
   type AdiProcessInput,
   type AstmA897Grade,
   type AtmosphereType,
@@ -14,6 +16,7 @@ import {
 } from "../adi/index.js";
 
 type CompositionKey = keyof AdiProcessInput["composition"];
+type CalibrationKey = keyof AdiModelCalibration;
 
 const compositionKeys: CompositionKey[] = [
   "C",
@@ -26,6 +29,112 @@ const compositionKeys: CompositionKey[] = [
   "Mg",
   "P",
   "S",
+];
+
+const helpCopy: Record<string, string> = {
+  ASTM: "ASTM A897 grade sets the strength, yield, elongation, and hardness target band.",
+  ADI: "ADI means austempered ductile iron: ductile iron heat treated to an ausferritic matrix.",
+  wt: "wt% means weight percent of the element in the chemistry.",
+  C: "Carbon. Total iron carbon is mostly graphite; matrix carbon controls austenite stability.",
+  Si: "Silicon. Suppresses carbide formation and can raise the needed austenitizing temperature.",
+  Mn: "Manganese. Adds austemperability but increases segregation and carbide or martensite risk.",
+  Cu: "Copper. Moderately increases austemperability with lower carbide risk than Mo or Cr.",
+  Ni: "Nickel. Improves austemperability and toughness, but can increase retained austenite.",
+  Mo: "Molybdenum. Strongly increases austemperability for thick sections but is segregation-prone.",
+  Cr: "Chromium. Raises hardenability but strongly increases carbide risk in standard ADI.",
+  Mg: "Magnesium. Supports graphite nodularity; poor nodularity can limit achievable properties.",
+  P: "Phosphorus. A harmful residual that can form brittle cell-boundary films.",
+  S: "Sulfur. A harmful residual that burdens Mg treatment and nodule quality.",
+  AI: "Austemperability Index. Higher values mean better chance of avoiding pearlite during quench.",
+  CSR: "Carbide Segregation Risk. Higher values flag Mn/Mo/Cr/P and section-size risk.",
+  CP: "Carbon potential. Furnace atmosphere setting used to avoid surface decarb or carburization.",
+  HBW: "Brinell hardness. Used with tensile results to validate the selected ADI grade.",
+  "Dimensional Growth Sensitive":
+    "Reduces recommended austenitizing temperature when dimensional change is a priority.",
+  "Carbides Present":
+    "Adds heat-treatment severity and warnings because carbides may not fully dissolve.",
+  "Carbon Potential Control":
+    "Indicates the furnace can hold a neutral carbon condition during austenitizing.",
+  "Critical Section":
+    "The section that controls heat-up, quench severity, and austemper hold timing.",
+  "Nodule Count":
+    "Graphite nodules per square millimeter. Low counts reduce confidence in property predictions.",
+  Nodularity:
+    "Percent of graphite present as acceptable nodules. Poor nodularity can invalidate grade targets.",
+};
+
+const calibrationFields: Array<{
+  key: CalibrationKey;
+  label: string;
+  description: string;
+  min: number;
+  max: number;
+  step: string;
+}> = [
+  {
+    key: "alloyAustemperabilityScale",
+    label: "Alloy hardenability scale",
+    description: "Raises or lowers the Ni/Cu/Mo/Mn/Cr benefit in the AI score.",
+    min: 0.5,
+    max: 1.5,
+    step: "0.01",
+  },
+  {
+    key: "sectionPenaltyScale",
+    label: "Section cooling penalty",
+    description: "Adjusts how strongly critical section thickness penalizes austemperability.",
+    min: 0.5,
+    max: 1.75,
+    step: "0.01",
+  },
+  {
+    key: "transferPenaltyScale",
+    label: "Transfer delay penalty",
+    description: "Adjusts how strongly quench transfer time lowers austemperability.",
+    min: 0.5,
+    max: 1.75,
+    step: "0.01",
+  },
+  {
+    key: "agitationPenaltyScale",
+    label: "Bath agitation penalty",
+    description: "Adjusts how much poor or fair bath agitation hurts the AI score.",
+    min: 0.5,
+    max: 1.75,
+    step: "0.01",
+  },
+  {
+    key: "carbideSegregationScale",
+    label: "Carbide sensitivity",
+    description: "Scales the Mn/Mo/Cr/P segregation and carbide warning score.",
+    min: 0.5,
+    max: 1.75,
+    step: "0.01",
+  },
+  {
+    key: "temperatureAdjustmentScale",
+    label: "Temperature adjustment scale",
+    description: "Scales chemistry, section, carbide, and growth-sensitive temperature offsets.",
+    min: 0.5,
+    max: 1.5,
+    step: "0.01",
+  },
+  {
+    key: "soakTimeScale",
+    label: "Austenitize soak scale",
+    description: "Scales added soak time from section, matrix, silicon, alloys, and carbides.",
+    min: 0.5,
+    max: 2,
+    step: "0.01",
+  },
+  {
+    key: "holdTimeScale",
+    label: "Austemper hold scale",
+    description: "Scales the calculated minimum austemper hold after the core reaches bath range.",
+    min: 0.5,
+    max: 2,
+    step: "0.01",
+  },
 ];
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -74,6 +183,8 @@ const state: AdiProcessInput = {
   },
 };
 
+let calibration: AdiModelCalibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
+
 app.innerHTML = `
   <header class="app-header">
     <div class="brand">
@@ -91,7 +202,7 @@ app.innerHTML = `
     <div class="header-actions">
       <button class="icon-button" type="button" title="Load project"><i class="ph ph-folder-open"></i></button>
       <button class="icon-button" type="button" title="Save project"><i class="ph ph-floppy-disk"></i></button>
-      <button class="primary-action" id="run-calculation" type="button"><i class="ph ph-play"></i> Run Calculation</button>
+      <button class="primary-action" id="settings-open" type="button"><i class="ph ph-sliders-horizontal"></i> Settings</button>
     </div>
   </header>
 
@@ -100,7 +211,7 @@ app.innerHTML = `
       <div class="section-block">
         <div class="section-heading"><i class="ph ph-crosshair"></i><span>1. ASTM Target</span></div>
         <div class="field-grid target-grid">
-          ${selectField("grade", "ASTM Grade", ASTM_A897_GRADES.map((g) => [g.grade, `${g.grade} (${g.processDirection})`]), state.target.grade)}
+          ${selectField("grade", "ASTM Grade", ASTM_A897_GRADES.map((g) => [g.grade, `${g.grade} (${g.processDirection})`]), state.target.grade, "ASTM")}
           ${selectField("priority", "Priority", [
             ["strength", "Strength"],
             ["ductility", "Ductility"],
@@ -109,18 +220,15 @@ app.innerHTML = `
             ["fatigue", "Fatigue"],
             ["machinability", "Machinability"],
           ], state.target.priority)}
-          <label class="field toggle-field">
-            <span>Dimensional Growth Sensitive</span>
-            <input id="dimensionalGrowthSensitive" type="checkbox" />
-          </label>
+          ${toggleField("dimensionalGrowthSensitive", "Dimensional Growth Sensitive")}
         </div>
       </div>
 
       <div class="section-block">
-        <div class="section-heading"><i class="ph ph-flask"></i><span>2. Chemical Composition (wt%)</span></div>
+        <div class="section-heading"><i class="ph ph-flask"></i><span>2. Chemical Composition (wt%)</span>${helpButton("wt")}</div>
         <div class="composition-grid">
           ${compositionKeys
-            .map((key) => numberField(`composition.${key}`, key, state.composition[key], "0.001"))
+            .map((key) => numberField(`composition.${key}`, key, state.composition[key], "0.001", "", key))
             .join("")}
         </div>
       </div>
@@ -129,7 +237,7 @@ app.innerHTML = `
         <div class="section-heading"><i class="ph ph-cube"></i><span>3. Geometry</span></div>
         <div class="field-grid geometry-grid">
           ${numberField("geometry.maxSectionMm", "Max Section", state.geometry.maxSectionMm, "0.1", "mm")}
-          ${numberField("geometry.criticalSectionMm", "Critical Section", state.geometry.criticalSectionMm, "0.1", "mm")}
+          ${numberField("geometry.criticalSectionMm", "Critical Section", state.geometry.criticalSectionMm, "0.1", "mm", "Critical Section")}
           ${numberField("geometry.minSectionMm", "Min Section", state.geometry.minSectionMm, "0.1", "mm")}
           ${numberField("geometry.estimatedMassKg", "Estimated Mass", state.geometry.estimatedMassKg ?? 0, "0.1", "kg")}
         </div>
@@ -143,12 +251,9 @@ app.innerHTML = `
             ["pearlitic", "Pearlitic"],
             ["ferritic-pearlitic", "Ferritic-Pearlitic"],
           ], state.microstructure.startingMatrix)}
-          <label class="field toggle-field">
-            <span>Carbides Present</span>
-            <input id="carbidesPresent" type="checkbox" />
-          </label>
-          ${numberField("microstructure.noduleCountPerMm2", "Nodule Count", state.microstructure.noduleCountPerMm2 ?? 0, "1", "/mm²")}
-          ${numberField("microstructure.nodularityPercent", "Nodularity", state.microstructure.nodularityPercent ?? 0, "1", "%")}
+          ${toggleField("carbidesPresent", "Carbides Present")}
+          ${numberField("microstructure.noduleCountPerMm2", "Nodule Count", state.microstructure.noduleCountPerMm2 ?? 0, "1", "/mm²", "Nodule Count")}
+          ${numberField("microstructure.nodularityPercent", "Nodularity", state.microstructure.nodularityPercent ?? 0, "1", "%", "Nodularity")}
         </div>
       </div>
 
@@ -184,10 +289,7 @@ app.innerHTML = `
           ], state.equipment.austemperBathType)}
           ${numberField("equipment.quenchTransferTimeSec", "Transfer Time", state.equipment.quenchTransferTimeSec, "0.1", "s")}
           ${numberField("equipment.bathUniformityC", "Bath Uniformity", state.equipment.bathUniformityC, "0.1", "°C")}
-          <label class="field toggle-field">
-            <span>Carbon Potential Control</span>
-            <input id="carbonPotentialControl" type="checkbox" checked />
-          </label>
+          ${toggleField("carbonPotentialControl", "Carbon Potential Control", true)}
         </div>
       </div>
     </section>
@@ -196,6 +298,31 @@ app.innerHTML = `
       <div id="recommendation"></div>
     </aside>
   </main>
+
+  <div class="settings-backdrop" id="settings-backdrop" hidden>
+    <section class="settings-panel" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+      <div class="settings-header">
+        <div>
+          <div class="eyebrow">Equipment calibration</div>
+          <h2 id="settings-title">Model Settings</h2>
+        </div>
+        <button class="icon-button" id="settings-close" type="button" title="Close settings">
+          <i class="ph ph-x"></i>
+        </button>
+      </div>
+      <div class="settings-copy">
+        Tune these only after comparing the recommendation against your furnace, bath, coupons, and metallography.
+        A value of 1.00 is the default research-based heuristic.
+      </div>
+      <div class="settings-grid">
+        ${settingsFields()}
+      </div>
+      <div class="settings-footer">
+        <button class="secondary-action" id="settings-reset" type="button">Reset Defaults</button>
+        <button class="primary-action" id="settings-done" type="button">Done</button>
+      </div>
+    </section>
+  </div>
 `;
 
 const recommendationEl = document.querySelector<HTMLDivElement>("#recommendation");
@@ -227,7 +354,7 @@ function bindInputs(): void {
     state.equipment.carbonPotentialControl = checked;
   });
 
-  document.querySelector("#run-calculation")?.addEventListener("click", renderRecommendation);
+  bindSettings();
 }
 
 function bindCheckbox(id: string, update: (checked: boolean) => void): void {
@@ -235,6 +362,70 @@ function bindCheckbox(id: string, update: (checked: boolean) => void): void {
   input?.addEventListener("change", () => {
     update(input.checked);
     renderRecommendation();
+  });
+}
+
+function bindSettings(): void {
+  const backdrop = document.querySelector<HTMLDivElement>("#settings-backdrop");
+  const openButton = document.querySelector<HTMLButtonElement>("#settings-open");
+  const closeButtons = [
+    document.querySelector<HTMLButtonElement>("#settings-close"),
+    document.querySelector<HTMLButtonElement>("#settings-done"),
+  ];
+
+  openButton?.addEventListener("click", () => {
+    if (backdrop) {
+      backdrop.hidden = false;
+    }
+  });
+
+  for (const button of closeButtons) {
+    button?.addEventListener("click", () => {
+      if (backdrop) {
+        backdrop.hidden = true;
+      }
+    });
+  }
+
+  backdrop?.addEventListener("click", (event) => {
+    if (event.target === backdrop) {
+      backdrop.hidden = true;
+    }
+  });
+
+  document.querySelector<HTMLButtonElement>("#settings-reset")?.addEventListener("click", () => {
+    calibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
+    syncCalibrationControls();
+    renderRecommendation();
+  });
+
+  document.querySelectorAll<HTMLInputElement>("[data-calibration]").forEach((control) => {
+    control.addEventListener("input", () => {
+      const key = control.dataset.calibration as CalibrationKey | undefined;
+      if (!key) {
+        return;
+      }
+
+      calibration = {
+        ...calibration,
+        [key]: Number(control.value),
+      };
+      syncCalibrationControls(key);
+      renderRecommendation();
+    });
+  });
+}
+
+function syncCalibrationControls(changedKey?: CalibrationKey): void {
+  const selector = changedKey
+    ? `[data-calibration="${changedKey}"]`
+    : "[data-calibration]";
+
+  document.querySelectorAll<HTMLInputElement>(selector).forEach((control) => {
+    const key = control.dataset.calibration as CalibrationKey | undefined;
+    if (key) {
+      control.value = calibration[key].toFixed(2);
+    }
   });
 }
 
@@ -288,7 +479,7 @@ function assignNumeric(path: string, value: number): void {
 
 function renderRecommendation(): void {
   try {
-    const result = recommendAdiProcess(state);
+    const result = recommendAdiProcess(state, calibration);
     const confidenceClass = `confidence-${result.confidence}`;
     const warnings = result.warnings.length > 0
       ? result.warnings
@@ -312,8 +503,8 @@ function renderRecommendation(): void {
       </div>
 
       <div class="metric-strip">
-        ${metric("AI", result.scores.austemperabilityIndex.toFixed(2), `required ${result.scores.requiredAustemperabilityIndex.toFixed(2)}`)}
-        ${metric("CSR", result.scores.carbideSegregationRisk.toFixed(2), "carbide risk")}
+        ${metric("AI", result.scores.austemperabilityIndex.toFixed(2), `required ${result.scores.requiredAustemperabilityIndex.toFixed(2)}`, "AI")}
+        ${metric("CSR", result.scores.carbideSegregationRisk.toFixed(2), "carbide risk", "CSR")}
         ${metric("Transfer", `${result.transfer.actualTransferTimeSec}s`, `max ${result.transfer.maxRecommendedTransferTimeSec}s`)}
         ${metric("Window", result.austemper.processingWindowStatus, "reaction")}
       </div>
@@ -345,15 +536,67 @@ function renderRecommendation(): void {
   }
 }
 
+function settingsFields(): string {
+  return calibrationFields
+    .map((field) => {
+      const value = calibration[field.key].toFixed(2);
+      return `
+        <div class="settings-field">
+          <label for="setting-${field.key}">${field.label}</label>
+          <p>${field.description}</p>
+          <div class="settings-control">
+            <input
+              id="setting-${field.key}"
+              data-calibration="${field.key}"
+              type="range"
+              min="${field.min}"
+              max="${field.max}"
+              step="${field.step}"
+              value="${value}"
+            />
+            <input
+              aria-label="${field.label} value"
+              data-calibration="${field.key}"
+              type="number"
+              min="${field.min}"
+              max="${field.max}"
+              step="${field.step}"
+              value="${value}"
+            />
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function fieldLabel(label: string, helpKey?: string): string {
+  return `<span class="field-label">${label}${helpKey ? helpButton(helpKey) : ""}</span>`;
+}
+
+function helpButton(helpKey: string): string {
+  const text = helpCopy[helpKey];
+  if (!text) {
+    return "";
+  }
+
+  return `
+    <button class="help-button" type="button" aria-label="${helpKey} help" data-tooltip="${text}">
+      ?
+    </button>
+  `;
+}
+
 function selectField(
   id: string,
   label: string,
   options: Array<[string, string]>,
   value: string,
+  helpKey?: string,
 ): string {
   return `
     <label class="field">
-      <span>${label}</span>
+      ${fieldLabel(label, helpKey)}
       <select data-path="${id}">
         ${options
           .map(([optionValue, optionLabel]) => `<option value="${optionValue}" ${optionValue === value ? "selected" : ""}>${optionLabel}</option>`)
@@ -363,14 +606,32 @@ function selectField(
   `;
 }
 
-function numberField(id: string, label: string, value: number, step: string, unit = ""): string {
+function numberField(
+  id: string,
+  label: string,
+  value: number,
+  step: string,
+  unit = "",
+  helpKey?: string,
+): string {
   return `
     <label class="field">
-      <span>${label}</span>
+      ${fieldLabel(label, helpKey)}
       <div class="unit-input">
         <input data-path="${id}" type="number" value="${value}" step="${step}" />
         ${unit ? `<span>${unit}</span>` : ""}
       </div>
+    </label>
+  `;
+}
+
+function toggleField(id: string, label: string, checked = false): string {
+  return `
+    <label class="field toggle-field">
+      ${fieldLabel(label, label)}
+      <span class="toggle-control">
+        <input id="${id}" type="checkbox" ${checked ? "checked" : ""} />
+      </span>
     </label>
   `;
 }
@@ -388,10 +649,10 @@ function processWindow(icon: string, title: string, range: string, nominal: stri
   `;
 }
 
-function metric(label: string, value: string, hint: string): string {
+function metric(label: string, value: string, hint: string, helpKey?: string): string {
   return `
     <div class="metric">
-      <span>${label}</span>
+      <span>${label}${helpKey ? helpButton(helpKey) : ""}</span>
       <strong>${value}</strong>
       <em>${hint}</em>
     </div>

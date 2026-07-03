@@ -2,8 +2,10 @@ import type {
   AdiModelCalibration,
   AdiProcessInput,
   AdiProcessRecommendation,
+  TemperatureWindow,
 } from "../adi/index.js";
 import type { PinnedComparisonBaseline } from "./project-state.js";
+import type { UnitSystem } from "./units.js";
 
 export interface CreatePinnedComparisonBaselineInput {
   readonly input: AdiProcessInput;
@@ -42,6 +44,7 @@ export function createPinnedComparisonBaseline(
 export function compareToBaseline(
   baseline: PinnedComparisonBaseline,
   current: AdiProcessRecommendation,
+  unitSystem: UnitSystem = "metric",
 ): ComparisonViewModel {
   const pinned = baseline.recommendation;
   const warningDelta = current.warnings.length - pinned.warnings.length;
@@ -59,17 +62,17 @@ export function compareToBaseline(
     rows: [
       textRow("Grade", pinned.expectedGrade, current.expectedGrade),
       textRow("Confidence", pinned.confidence, current.confidence),
-      numberRow(
+      temperatureRow(
         "Austenitize nominal",
-        pinned.austenitize.temperature.nominalC,
-        current.austenitize.temperature.nominalC,
-        "°C",
+        pinned.austenitize.temperature,
+        current.austenitize.temperature,
+        unitSystem,
       ),
-      numberRow(
+      temperatureRow(
         "Austemper nominal",
-        pinned.austemper.temperature.nominalC,
-        current.austemper.temperature.nominalC,
-        "°C",
+        pinned.austemper.temperature,
+        current.austemper.temperature,
+        unitSystem,
       ),
       rangeRow(
         "Hold range",
@@ -138,6 +141,17 @@ function numberRow(
     currentValue: formatNumericValue(current, unit, precision),
     delta: formatNumericDelta(current, baseline, unit, precision),
   };
+}
+
+function temperatureRow(
+  label: string,
+  baseline: TemperatureWindow,
+  current: TemperatureWindow,
+  unitSystem: UnitSystem,
+): ComparisonRow {
+  return unitSystem === "imperial"
+    ? numberRow(label, baseline.nominalF, current.nominalF, "°F")
+    : numberRow(label, baseline.nominalC, current.nominalC, "°C");
 }
 
 function rangeRow(

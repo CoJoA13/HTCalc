@@ -110,4 +110,35 @@ describe("comparison helpers", () => {
     expect(rowByLabel.get("Transfer time")?.delta).toBe("+2 s");
     expect(rowByLabel.get("Warning count")?.delta).toBe("+1");
   });
+
+  it("uses Fahrenheit comparison rows in imperial mode", () => {
+    const recommendation = recommendAdiProcess(adiInput, DEFAULT_ADI_MODEL_CALIBRATION);
+    const baseline = createPinnedComparisonBaseline({
+      input: adiInput,
+      calibration: DEFAULT_ADI_MODEL_CALIBRATION,
+      recommendation,
+      pinnedAt: "2026-07-03T00:00:00.000Z",
+    });
+    const current: AdiProcessRecommendation = {
+      ...recommendation,
+      austenitize: {
+        ...recommendation.austenitize,
+        temperature: {
+          ...recommendation.austenitize.temperature,
+          nominalC: recommendation.austenitize.temperature.nominalC + 10,
+          nominalF: recommendation.austenitize.temperature.nominalF + 18,
+        },
+      },
+    };
+
+    const comparison = compareToBaseline(baseline, current, "imperial");
+    const rowByLabel = new Map(comparison.rows.map((row) => [row.label, row]));
+
+    expect(rowByLabel.get("Austenitize nominal")).toEqual({
+      label: "Austenitize nominal",
+      baselineValue: `${recommendation.austenitize.temperature.nominalF} °F`,
+      currentValue: `${current.austenitize.temperature.nominalF} °F`,
+      delta: "+18 °F",
+    });
+  });
 });

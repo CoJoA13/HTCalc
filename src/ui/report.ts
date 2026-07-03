@@ -10,7 +10,9 @@ import type {
 import {
   temperatureNominalLabel,
   temperatureRangeLabel,
+  toDisplayValue,
   type UnitSystem,
+  unitLabelForPath,
 } from "./units.js";
 import type { ComparisonViewModel } from "./comparison.js";
 
@@ -51,6 +53,13 @@ export function serializeReportMarkdown(report: ReportViewModel): string {
     ? report.metadata.notes.trim()
     : "No project notes entered.";
   const comparison = report.comparison ? comparisonLines(report.comparison) : [];
+  const criticalSectionPath = "geometry.criticalSectionMm";
+  const criticalSection = formatNumber(toDisplayValue(
+    criticalSectionPath,
+    report.input.geometry.criticalSectionMm,
+    report.unitSystem,
+  ));
+  const criticalSectionUnit = unitLabelForPath(criticalSectionPath, report.unitSystem, "mm");
 
   return [
     `# ${report.title}`,
@@ -68,7 +77,7 @@ export function serializeReportMarkdown(report: ReportViewModel): string {
     "## Target",
     `ASTM grade: ${report.input.target.grade}`,
     `Priority: ${report.input.target.priority}`,
-    `Critical section: ${formatNumber(report.input.geometry.criticalSectionMm)} mm`,
+    `Critical section: ${criticalSection} ${criticalSectionUnit}`,
     "",
     "## Process Windows",
     `- Austenitize: ${temperatureRangeLabel(report.recommendation.austenitize.temperature, report.unitSystem)}; nominal ${temperatureNominalLabel(report.recommendation.austenitize.temperature, report.unitSystem)}; soak ${report.recommendation.austenitize.soakAfterCoreAtTemp.minMin}-${report.recommendation.austenitize.soakAfterCoreAtTemp.maxMin} min`,

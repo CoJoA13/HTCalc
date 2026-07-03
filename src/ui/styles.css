@@ -1167,28 +1167,32 @@ button:focus-visible {
     background: #ffffff;
   }
 
-  .app-header,
-  .project-status,
-  .workspace,
-  .settings-backdrop,
-  .report-toolbar {
+  body.is-report-open .app-header,
+  body.is-report-open .project-status,
+  body.is-report-open .workspace,
+  body.is-report-open .settings-backdrop,
+  body.is-report-open .report-toolbar {
     display: none !important;
   }
 
-  .report-backdrop {
+  body:not(.is-report-open) .report-backdrop {
+    display: none !important;
+  }
+
+  body.is-report-open .report-backdrop {
     position: static;
     display: block;
     padding: 0;
     background: #ffffff;
   }
 
-  .report-panel {
+  body.is-report-open .report-panel {
     width: 100%;
     min-height: auto;
     box-shadow: none;
   }
 
-  .report-document {
+  body.is-report-open .report-document {
     padding: 0;
   }
 }

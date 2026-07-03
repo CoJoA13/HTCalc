@@ -743,9 +743,7 @@ function bindReportDialog(): void {
   const backdrop = document.querySelector<HTMLDivElement>("#report-backdrop");
 
   document.querySelector<HTMLButtonElement>("#report-close")?.addEventListener("click", () => {
-    if (backdrop) {
-      backdrop.hidden = true;
-    }
+    closeReportDialog();
   });
 
   document.querySelector<HTMLButtonElement>("#report-print")?.addEventListener("click", () => {
@@ -758,7 +756,7 @@ function bindReportDialog(): void {
 
   backdrop?.addEventListener("click", (event) => {
     if (event.target === backdrop) {
-      backdrop.hidden = true;
+      closeReportDialog();
     }
   });
 }
@@ -841,7 +839,7 @@ function renderRecommendation(): void {
       ? `${result.austenitize.carbonPotential.rangeCarbonEquivalentPercent[0].toFixed(2)}-${result.austenitize.carbonPotential.rangeCarbonEquivalentPercent[1].toFixed(2)}% C eq.`
       : "Equipment calibrated";
     const comparison = pinnedComparisonBaseline
-      ? compareToBaseline(pinnedComparisonBaseline, result)
+      ? compareToBaseline(pinnedComparisonBaseline, result, unitSystem)
       : null;
 
     recommendationPanel.innerHTML = `
@@ -1051,7 +1049,7 @@ function currentReportViewModel(result?: AdiProcessRecommendation): ReportViewMo
   const recommendation = result ?? recommendAdiProcess(state, calibration);
   validationChecklist = reconcileValidationChecklist(validationChecklist, recommendation.validationChecks);
   const comparison = pinnedComparisonBaseline
-    ? compareToBaseline(pinnedComparisonBaseline, recommendation)
+    ? compareToBaseline(pinnedComparisonBaseline, recommendation, unitSystem)
     : null;
   const baseReport = {
     activeModeLabel: getProcessMode("adi").label,
@@ -1080,9 +1078,18 @@ function openReportDialog(result?: AdiProcessRecommendation): void {
 
     documentEl.innerHTML = reportHtml(report);
     backdrop.hidden = false;
+    document.body.classList.add("is-report-open");
   } catch (error) {
     showProjectStatus(error instanceof Error ? error.message : "Could not create report.", true);
   }
+}
+
+function closeReportDialog(): void {
+  const backdrop = document.querySelector<HTMLDivElement>("#report-backdrop");
+  if (backdrop) {
+    backdrop.hidden = true;
+  }
+  document.body.classList.remove("is-report-open");
 }
 
 function downloadCurrentMarkdownReport(result?: AdiProcessRecommendation): void {

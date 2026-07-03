@@ -88,6 +88,8 @@ describe("report helpers", () => {
     expect(markdown).toContain("Customer: ACME Castings");
     expect(markdown).toContain("Part: Pump bracket");
     expect(markdown).toContain("Qualification run for engineering review.");
+    expect(markdown).toContain("Critical section: 0.98 in");
+    expect(markdown).not.toContain("Critical section: 25 mm");
     expect(markdown).toContain("Austenitize");
     expect(markdown).toContain("Austemper");
     expect(markdown).toContain(`AI: ${recommendation.scores.austemperabilityIndex.toFixed(2)}`);

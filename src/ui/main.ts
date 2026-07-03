@@ -16,6 +16,15 @@ import {
   type StartingMatrix,
 } from "../adi/index.js";
 import {
+  recommendMartemperingProcess,
+  recommendSteelAustemperingProcess,
+  type MartemperingInput,
+  type SteelAustemperingInput,
+  type SteelBaseInput,
+  type SteelComposition,
+  type SteelProcessRecommendation,
+} from "../steel/index.js";
+import {
   reconcileValidationChecklist,
 } from "./checklist.js";
 import {
@@ -34,6 +43,7 @@ import {
   parseProjectState,
   serializeProjectState,
   type HtcalcProjectState,
+  type ModeValidationChecklists,
   type PinnedComparisonBaseline,
   type ProjectMetadata,
   type ValidationChecklistState,
@@ -44,6 +54,19 @@ import {
   serializeReportMarkdown,
   type ReportViewModel,
 } from "./report.js";
+import {
+  createSteelReportViewModel,
+  serializeSteelReportMarkdown,
+  steelReportMarkdownFilename,
+  type SteelReportModeId,
+  type SteelReportViewModel,
+} from "./steel-report.js";
+import {
+  defaultMartemperingInput,
+  defaultSteelAustemperingInput,
+  setMartemperingInputValue,
+  setSteelAustemperingInputValue,
+} from "./steel-state.js";
 import {
   isUnitSensitivePath,
   temperatureNominalLabel,
@@ -60,6 +83,8 @@ import {
 
 type CompositionKey = keyof AdiProcessInput["composition"];
 type CalibrationKey = keyof AdiModelCalibration;
+type SteelCompositionKey = keyof SteelComposition;
+type SteelModeId = "steel-austempering" | "martempering";
 
 const compositionKeys: CompositionKey[] = [
   "C",
@@ -72,6 +97,18 @@ const compositionKeys: CompositionKey[] = [
   "Mg",
   "P",
   "S",
+];
+
+const steelCompositionKeys: SteelCompositionKey[] = [
+  "C",
+  "Mn",
+  "Si",
+  "Ni",
+  "Cr",
+  "Mo",
+  "V",
+  "Cu",
+  "B",
 ];
 
 const helpCopy: Record<string, string> = {
@@ -226,6 +263,8 @@ const state: AdiProcessInput = {
   },
 };
 
+let steelAustemperingState: SteelAustemperingInput = defaultSteelAustemperingInput();
+let martemperingState: MartemperingInput = defaultMartemperingInput();
 let calibration: AdiModelCalibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
 let unitSystem: UnitSystem = "imperial";
 let activeModeId: ProcessModeId = "adi";
@@ -234,7 +273,11 @@ let projectMetadata: ProjectMetadata = {
   partName: "",
   notes: "",
 };
-let validationChecklist: ValidationChecklistState = { items: [] };
+let validationChecklists: ModeValidationChecklists = {
+  adi: { items: [] },
+  "steel-austempering": { items: [] },
+  martempering: { items: [] },
+};
 let pinnedComparisonBaseline: PinnedComparisonBaseline | null = null;
 
 app.innerHTML = `
@@ -452,6 +495,171 @@ function plannedWorkspace(mode: ProcessMode): string {
   `;
 }
 
+function steelAustemperingWorkspace(): string {
+  return `
+    <section class="input-pane" aria-label="Steel austempering inputs">
+      ${projectDetailsSection()}
+      ${steelSharedInputSections(steelAustemperingState)}
+
+      <div class="section-block">
+        <div class="section-heading"><i class="ph ph-drop"></i><span>6. Austempering</span></div>
+        <div class="field-grid equipment-grid">
+          ${steelSelectField("austemper.bainiteTarget", "Bainite Target", [
+            ["upper", "Upper Bainite"],
+            ["lower", "Lower Bainite"],
+            ["balanced", "Balanced"],
+          ], steelAustemperingState.austemper.bainiteTarget)}
+          ${steelSelectField("austemper.bathMedium", "Bath Medium", [
+            ["salt", "Salt"],
+            ["hot-oil", "Hot Oil"],
+            ["fluidized-bed", "Fluidized Bed"],
+            ["furnace", "Furnace Hold"],
+            ["other", "Other"],
+          ], steelAustemperingState.austemper.bathMedium)}
+          ${steelNumberField("austemper.bathTemperatureC", "Requested Bath", steelAustemperingState.austemper.bathTemperatureC, "1", "°C")}
+          ${steelNumberField("austemper.maxHoldMin", "Max Hold", steelAustemperingState.austemper.maxHoldMin, "1", "min")}
+        </div>
+      </div>
+    </section>
+
+    <aside class="result-pane" aria-label="Steel austempering recommendation">
+      <div id="recommendation"></div>
+    </aside>
+  `;
+}
+
+function martemperingWorkspace(): string {
+  return `
+    <section class="input-pane" aria-label="Martempering inputs">
+      ${projectDetailsSection()}
+      ${steelSharedInputSections(martemperingState)}
+
+      <div class="section-block">
+        <div class="section-heading"><i class="ph ph-lock-simple"></i><span>6. Martempering & Tempering</span></div>
+        <div class="field-grid equipment-grid">
+          ${steelSelectField("martemper.bathMedium", "Bath Medium", [
+            ["salt", "Salt"],
+            ["hot-oil", "Hot Oil"],
+            ["polymer", "Polymer"],
+            ["other", "Other"],
+          ], martemperingState.martemper.bathMedium)}
+          ${steelNumberField("martemper.bathTemperatureC", "Requested Bath", martemperingState.martemper.bathTemperatureC, "1", "°C")}
+          ${steelSelectField("martemper.equalizationStrategy", "Equalization", [
+            ["section-equalized", "Section Equalized"],
+            ["surface-equalized", "Surface Equalized"],
+            ["time-limited", "Time Limited"],
+          ], martemperingState.martemper.equalizationStrategy)}
+          ${steelNumberField("martemper.maxEqualizationMin", "Max Equalize", martemperingState.martemper.maxEqualizationMin, "1", "min")}
+          ${steelNumberField("martemper.temperHoldMin", "Temper Hold", martemperingState.martemper.temperHoldMin, "1", "min")}
+          ${steelNumberField("martemper.temperCount", "Tempers", martemperingState.martemper.temperCount, "1", "")}
+        </div>
+      </div>
+    </section>
+
+    <aside class="result-pane" aria-label="Martempering recommendation">
+      <div id="recommendation"></div>
+    </aside>
+  `;
+}
+
+function projectDetailsSection(): string {
+  return `
+    <div class="section-block project-details-block">
+      <div class="section-heading"><i class="ph ph-clipboard-text"></i><span>Project Details</span></div>
+      <div class="field-grid metadata-grid">
+        ${metadataField("customerName", "Customer", projectMetadata.customerName)}
+        ${metadataField("partName", "Part", projectMetadata.partName)}
+        ${metadataNotesField()}
+      </div>
+    </div>
+  `;
+}
+
+function steelSharedInputSections(input: SteelBaseInput): string {
+  return `
+    <div class="section-block">
+      <div class="section-heading"><i class="ph ph-flask"></i><span>1. Steel Chemistry (wt%)</span>${helpButton("wt")}</div>
+      <div class="composition-grid">
+        ${steelCompositionKeys
+          .map((key) => steelNumberField(`composition.${key}`, key, input.composition[key], "0.001", "", key))
+          .join("")}
+      </div>
+    </div>
+
+    <div class="section-block">
+      <div class="section-heading"><i class="ph ph-cube"></i><span>2. Geometry</span></div>
+      <div class="field-grid geometry-grid">
+        ${steelNumberField("geometry.maxSectionMm", "Max Section", input.geometry.maxSectionMm, "0.1", "mm")}
+        ${steelNumberField("geometry.criticalSectionMm", "Critical Section", input.geometry.criticalSectionMm, "0.1", "mm", "Critical Section")}
+        ${steelNumberField("geometry.minSectionMm", "Min Section", input.geometry.minSectionMm, "0.1", "mm")}
+        ${steelNumberField("geometry.estimatedMassKg", "Estimated Mass", input.geometry.estimatedMassKg ?? 0, "0.1", "kg")}
+      </div>
+    </div>
+
+    <div class="section-block">
+      <div class="section-heading"><i class="ph ph-crosshair"></i><span>3. Target</span></div>
+      <div class="field-grid target-grid">
+        ${steelSelectField("startingCondition", "Starting Condition", [
+          ["normalized", "Normalized"],
+          ["annealed", "Annealed"],
+          ["spheroidized", "Spheroidized"],
+          ["quenched-tempered", "Quenched & Tempered"],
+          ["hot-rolled", "Hot Rolled"],
+          ["unknown", "Unknown"],
+        ], input.startingCondition)}
+        ${steelSelectField("target.priority", "Priority", [
+          ["hardness", "Hardness"],
+          ["toughness", "Toughness"],
+          ["distortion", "Distortion"],
+          ["wear", "Wear"],
+          ["fatigue", "Fatigue"],
+        ], input.target.priority)}
+        ${steelNumberField("target.targetHardnessHrc", "Target Hardness", input.target.targetHardnessHrc ?? 0, "0.5", "HRC")}
+      </div>
+    </div>
+
+    <div class="section-block">
+      <div class="section-heading"><i class="ph ph-factory"></i><span>4. Equipment & Quench</span></div>
+      <div class="field-grid equipment-grid">
+        ${steelSelectField("equipment.furnaceType", "Austenitizing Furnace", [
+          ["controlled-atmosphere", "Controlled Atmosphere"],
+          ["air", "Air"],
+          ["vacuum", "Vacuum"],
+          ["inert", "Inert"],
+          ["salt", "Salt"],
+        ], input.equipment.furnaceType)}
+        ${steelSelectField("equipment.atmosphereType", "Atmosphere", [
+          ["endothermic-neutral", "Endothermic Neutral"],
+          ["nitrogen-methanol", "Nitrogen-Methanol"],
+          ["vacuum", "Vacuum"],
+          ["inert", "Inert"],
+          ["air", "Air"],
+          ["salt", "Salt"],
+          ["unknown", "Unknown"],
+        ], input.equipment.atmosphereType)}
+        ${steelSelectField("equipment.quenchMedium", "Quench Medium", [
+          ["water", "Water"],
+          ["oil", "Oil"],
+          ["polymer", "Polymer"],
+          ["salt", "Salt"],
+          ["hot-oil", "Hot Oil"],
+          ["air", "Air"],
+          ["furnace", "Furnace"],
+          ["other", "Other"],
+        ], input.equipment.quenchMedium)}
+        ${steelSelectField("equipment.agitation", "Agitation", [
+          ["poor", "Poor"],
+          ["fair", "Fair"],
+          ["good", "Good"],
+        ], input.equipment.agitation)}
+        ${steelNumberField("equipment.transferTimeSec", "Transfer Time", input.equipment.transferTimeSec, "0.1", "s")}
+        ${steelNumberField("equipment.bathUniformityC", "Bath Uniformity", input.equipment.bathUniformityC, "0.1", "°C")}
+        ${steelToggleField("equipment.carbonProtection", "Carbon Protection", input.equipment.carbonProtection)}
+      </div>
+    </div>
+  `;
+}
+
 function processTabs(): string {
   return PROCESS_MODES.map((mode) => `
     <button
@@ -503,6 +711,18 @@ function bindAdiInputs(): void {
   });
 }
 
+function bindSteelInputs(modeId: SteelModeId): void {
+  bindMetadataInputs();
+
+  document.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-steel-path]").forEach((control) => {
+    const eventName = control instanceof HTMLInputElement && control.type === "checkbox" ? "change" : "input";
+    control.addEventListener(eventName, () => {
+      setSteelValue(modeId, control.dataset.steelPath ?? "", control);
+      renderSteelRecommendation(modeId);
+    });
+  });
+}
+
 function bindMetadataInputs(): void {
   document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[data-metadata]").forEach((control) => {
     control.addEventListener("input", () => {
@@ -546,15 +766,31 @@ function renderProcessTabs(): void {
 
 function renderWorkspace(): void {
   const mode = getProcessMode(activeModeId);
-  workspaceEl.innerHTML = mode.status === "implemented"
-    ? adiWorkspace()
-    : plannedWorkspace(mode);
+  workspaceEl.innerHTML = workspaceForMode(mode);
 
   if (mode.id === "adi") {
     bindAdiInputs();
     bindHelpButtons();
     syncUnitControls();
     renderRecommendation();
+  } else {
+    bindSteelInputs(mode.id);
+    bindHelpButtons();
+    syncUnitControls();
+    renderSteelRecommendation(mode.id);
+  }
+}
+
+function workspaceForMode(mode: ProcessMode): string {
+  switch (mode.id) {
+    case "adi":
+      return adiWorkspace();
+    case "steel-austempering":
+      return steelAustemperingWorkspace();
+    case "martempering":
+      return martemperingWorkspace();
+    default:
+      return plannedWorkspace(mode);
   }
 }
 
@@ -610,8 +846,10 @@ function saveProject(): void {
     unitSystem,
     adiInput: state,
     adiCalibration: calibration,
+    steelAustemperingInput: steelAustemperingState,
+    martemperingInput: martemperingState,
     metadata: projectMetadata,
-    validationChecklist,
+    validationChecklists,
     pinnedComparisonBaseline,
   });
   const blob = new Blob([serializeProjectState(project)], { type: "application/json" });
@@ -631,9 +869,9 @@ function restoreProject(project: HtcalcProjectState): void {
   unitSystem = project.unitSystem;
   calibration = { ...project.adi.calibration };
   projectMetadata = { ...project.metadata };
-  validationChecklist = {
-    items: project.validationChecklist.items.map((item) => ({ ...item })),
-  };
+  validationChecklists = structuredClone(project.validationChecklists);
+  steelAustemperingState = structuredClone(project.steelAustempering.input);
+  martemperingState = structuredClone(project.martempering.input);
   pinnedComparisonBaseline = project.pinnedComparisonBaseline
     ? structuredClone(project.pinnedComparisonBaseline)
     : null;
@@ -751,7 +989,11 @@ function bindReportDialog(): void {
   });
 
   document.querySelector<HTMLButtonElement>("#report-download")?.addEventListener("click", () => {
-    downloadCurrentMarkdownReport();
+    if (activeModeId === "adi") {
+      downloadCurrentMarkdownReport();
+    } else {
+      downloadCurrentSteelMarkdownReport(activeModeId);
+    }
   });
 
   backdrop?.addEventListener("click", (event) => {
@@ -806,6 +1048,41 @@ function setValue(path: string, control: HTMLInputElement | HTMLSelectElement): 
   }
 }
 
+function setSteelValue(
+  modeId: SteelModeId,
+  path: string,
+  control: HTMLInputElement | HTMLSelectElement,
+): void {
+  const value = control instanceof HTMLInputElement && control.type === "checkbox"
+    ? control.checked
+    : control instanceof HTMLInputElement && control.type === "number"
+      ? parseSteelNumericInputValue(path, control.value)
+      : control.value;
+
+  if (modeId === "steel-austempering") {
+    setSteelAustemperingInputValue(steelAustemperingState, path, value);
+  } else {
+    setMartemperingInputValue(martemperingState, path, value);
+  }
+}
+
+function parseSteelNumericInputValue(path: string, displayValue: string): number | undefined {
+  if (displayValue.trim() === "" && isOptionalSteelNumericPath(path)) {
+    return undefined;
+  }
+
+  return parseNumericInputValue(path, displayValue, unitSystem) ?? Number.NaN;
+}
+
+function isOptionalSteelNumericPath(path: string): boolean {
+  return [
+    "austemper.bathTemperatureC",
+    "austemper.maxHoldMin",
+    "martemper.bathTemperatureC",
+    "martemper.maxEqualizationMin",
+  ].includes(path);
+}
+
 function assignNumeric(path: string, value: number | undefined): void {
   const [group, key] = path.split(".") as [string, string];
   if (group === "composition") {
@@ -830,7 +1107,10 @@ function renderRecommendation(): void {
 
   try {
     const result = recommendAdiProcess(state, calibration);
-    validationChecklist = reconcileValidationChecklist(validationChecklist, result.validationChecks);
+    setValidationChecklist(
+      "adi",
+      reconcileValidationChecklist(validationChecklists.adi, result.validationChecks),
+    );
     const confidenceClass = `confidence-${result.confidence}`;
     const warnings = result.warnings.length > 0
       ? result.warnings
@@ -903,7 +1183,7 @@ function renderRecommendation(): void {
 
       <div class="result-section">
         <div class="result-title"><i class="ph ph-check-square"></i> Validation Checks</div>
-        ${validationChecklistRows()}
+        ${validationChecklistRows(validationChecklists.adi)}
       </div>
     `;
     bindRecommendationActions(result);
@@ -917,6 +1197,137 @@ function renderRecommendation(): void {
       </div>
     `;
   }
+}
+
+function renderSteelRecommendation(modeId: SteelModeId): void {
+  const recommendationPanel = document.querySelector<HTMLDivElement>("#recommendation");
+  if (!recommendationPanel) {
+    return;
+  }
+
+  try {
+    const result = recommendSteelForMode(modeId);
+    setValidationChecklist(
+      modeId,
+      reconcileValidationChecklist(validationChecklists[modeId], result.validationChecks),
+    );
+    const confidenceClass = `confidence-${result.confidence}`;
+    const warnings = result.warnings.length > 0
+      ? result.warnings
+      : ["No active risk warnings for the current input set."];
+
+    recommendationPanel.innerHTML = `
+      <div class="summary-header">
+        <div>
+          <div class="eyebrow">Recommended ${escapeHtml(getProcessMode(modeId).label)} Process</div>
+          <h2>${escapeHtml(steelSummaryTitle(result))}</h2>
+        </div>
+        <div class="summary-side">
+          <span class="confidence ${confidenceClass}">${result.confidence}</span>
+          <div class="recommendation-actions">
+            <button class="icon-button" data-steel-report-action="open" type="button" title="Open printable report">
+              <i class="ph ph-file-text"></i>
+            </button>
+            <button class="icon-button" data-steel-report-action="print" type="button" title="Print report">
+              <i class="ph ph-printer"></i>
+            </button>
+            <button class="icon-button" data-steel-report-action="markdown" type="button" title="Download Markdown report">
+              <i class="ph ph-download-simple"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="window-group">
+        ${processWindow("ph-thermometer-hot", "Austenitize", temperatureRangeLabel(result.austenitize.temperature, unitSystem), temperatureNominalLabel(result.austenitize.temperature, unitSystem), "Soak after core temp", `${result.austenitize.soakAfterCoreAtTemp.minMin}-${result.austenitize.soakAfterCoreAtTemp.maxMin} min`, result.processingWindowStatus, result.austenitize.atmosphereGuidance)}
+        ${steelModeProcessWindows(result)}
+      </div>
+
+      <div class="metric-strip">
+        ${metric("Ms", `${result.transformation.msC} °C`, "estimated")}
+        ${metric("Hardenability", result.transformation.hardenabilityScore.toFixed(2), "relative score")}
+        ${metric("Hardness", steelHardnessMetric(result), "estimated HRC")}
+        ${metric("Window", result.processingWindowStatus, "reaction")}
+      </div>
+
+      <div class="result-section">
+        <div class="result-title"><i class="ph ph-warning"></i> Warnings</div>
+        <ul class="warning-list">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+      </div>
+
+      <div class="result-section">
+        <div class="result-title"><i class="ph ph-check-square"></i> Validation Checks</div>
+        ${validationChecklistRows(validationChecklists[modeId])}
+      </div>
+    `;
+    bindSteelRecommendationActions(modeId, result);
+    bindChecklistControls();
+  } catch (error) {
+    recommendationPanel.innerHTML = `
+      <div class="error-state">
+        <i class="ph ph-warning-octagon"></i>
+        <h2>Input needs correction</h2>
+        <p>${error instanceof Error ? error.message : "Unable to calculate recommendation."}</p>
+      </div>
+    `;
+  }
+}
+
+function recommendSteelForMode(modeId: SteelModeId): SteelProcessRecommendation {
+  return modeId === "steel-austempering"
+    ? recommendSteelAustemperingProcess(steelAustemperingState)
+    : recommendMartemperingProcess(martemperingState);
+}
+
+function steelSummaryTitle(result: SteelProcessRecommendation): string {
+  return result.mode === "steel-austempering"
+    ? result.expectedStructure
+    : `Temper to ${result.temper.targetHardnessHrc} HRC`;
+}
+
+function steelModeProcessWindows(result: SteelProcessRecommendation): string {
+  if (result.mode === "steel-austempering") {
+    return processWindow(
+      "ph-drop",
+      "Austemper",
+      temperatureRangeLabel(result.austemper.temperature, unitSystem),
+      temperatureNominalLabel(result.austemper.temperature, unitSystem),
+      "Hold after core temp",
+      `${result.austemper.holdAfterCoreAtTemp.minMin}-${result.austemper.holdAfterCoreAtTemp.maxMin} min`,
+      result.processingWindowStatus,
+      result.finalCoolGuidance,
+    );
+  }
+
+  return [
+    processWindow(
+      "ph-drop",
+      "Martemper",
+      temperatureRangeLabel(result.martemper.temperature, unitSystem),
+      temperatureNominalLabel(result.martemper.temperature, unitSystem),
+      "Equalize",
+      `${result.equalize.minMin}-${result.equalize.maxMin} min`,
+      result.processingWindowStatus,
+      result.finalCoolGuidance,
+    ),
+    processWindow(
+      "ph-fire",
+      "Temper",
+      temperatureRangeLabel(result.temper.temperature, unitSystem),
+      temperatureNominalLabel(result.temper.temperature, unitSystem),
+      `${result.temper.temperCount} temper${result.temper.temperCount === 1 ? "" : "s"}`,
+      `${result.temper.hold.minMin}-${result.temper.hold.maxMin} min`,
+      result.processingWindowStatus,
+    ),
+  ].join("");
+}
+
+function steelHardnessMetric(result: SteelProcessRecommendation): string {
+  const hardness = result.mode === "steel-austempering"
+    ? result.expectedHardness
+    : result.asQuenchedHardness;
+
+  return `${hardness.nominalHrc} HRC`;
 }
 
 function bindRecommendationActions(result: AdiProcessRecommendation): void {
@@ -953,6 +1364,26 @@ function bindRecommendationActions(result: AdiProcessRecommendation): void {
   });
 }
 
+function bindSteelRecommendationActions(
+  modeId: SteelModeId,
+  result: SteelProcessRecommendation,
+): void {
+  document.querySelector<HTMLButtonElement>('[data-steel-report-action="open"]')?.addEventListener("click", () => {
+    openSteelReportDialog(modeId, result);
+  });
+
+  document.querySelector<HTMLButtonElement>('[data-steel-report-action="print"]')?.addEventListener("click", () => {
+    openSteelReportDialog(modeId, result);
+    requestAnimationFrame(() => {
+      window.print();
+    });
+  });
+
+  document.querySelector<HTMLButtonElement>('[data-steel-report-action="markdown"]')?.addEventListener("click", () => {
+    downloadCurrentSteelMarkdownReport(modeId, result);
+  });
+}
+
 function bindChecklistControls(): void {
   document.querySelectorAll<HTMLInputElement>("[data-checklist-check]").forEach((control) => {
     control.addEventListener("change", () => {
@@ -975,10 +1406,18 @@ function updateChecklistItem(
   id: string,
   patch: Partial<Pick<ValidationChecklistState["items"][number], "checked" | "notes">>,
 ): void {
-  validationChecklist = {
-    items: validationChecklist.items.map((item) =>
+  const modeId = activeModeId;
+  setValidationChecklist(modeId, {
+    items: validationChecklists[modeId].items.map((item) =>
       item.id === id ? { ...item, ...patch } : item
     ),
+  });
+}
+
+function setValidationChecklist(modeId: ProcessModeId, checklist: ValidationChecklistState): void {
+  validationChecklists = {
+    ...validationChecklists,
+    [modeId]: checklist,
   };
 }
 
@@ -1012,14 +1451,14 @@ function comparisonPanel(comparison: ComparisonViewModel): string {
   `;
 }
 
-function validationChecklistRows(): string {
-  if (validationChecklist.items.length === 0) {
+function validationChecklistRows(checklist: ValidationChecklistState): string {
+  if (checklist.items.length === 0) {
     return `<p class="empty-note">No validation checks generated.</p>`;
   }
 
   return `
     <div class="validation-list">
-      ${validationChecklist.items.map((item) => `
+      ${checklist.items.map((item) => `
         <div class="validation-item">
           <label>
             <input
@@ -1047,7 +1486,10 @@ function baselineLabel(result: AdiProcessRecommendation): string {
 
 function currentReportViewModel(result?: AdiProcessRecommendation): ReportViewModel {
   const recommendation = result ?? recommendAdiProcess(state, calibration);
-  validationChecklist = reconcileValidationChecklist(validationChecklist, recommendation.validationChecks);
+  setValidationChecklist(
+    "adi",
+    reconcileValidationChecklist(validationChecklists.adi, recommendation.validationChecks),
+  );
   const comparison = pinnedComparisonBaseline
     ? compareToBaseline(pinnedComparisonBaseline, recommendation, unitSystem)
     : null;
@@ -1059,12 +1501,33 @@ function currentReportViewModel(result?: AdiProcessRecommendation): ReportViewMo
     input: state,
     calibration,
     recommendation,
-    validationChecklist,
+    validationChecklist: validationChecklists.adi,
   };
 
   return comparison
     ? createReportViewModel({ ...baseReport, comparison })
     : createReportViewModel(baseReport);
+}
+
+function currentSteelReportViewModel(
+  modeId: SteelModeId,
+  result?: SteelProcessRecommendation,
+): SteelReportViewModel {
+  const recommendation = result ?? recommendSteelForMode(modeId);
+  setValidationChecklist(
+    modeId,
+    reconcileValidationChecklist(validationChecklists[modeId], recommendation.validationChecks),
+  );
+
+  return createSteelReportViewModel({
+    activeModeLabel: getProcessMode(modeId).label,
+    unitSystem,
+    exportedAt: new Date().toISOString(),
+    metadata: projectMetadata,
+    input: modeId === "steel-austempering" ? steelAustemperingState : martemperingState,
+    recommendation,
+    validationChecklist: validationChecklists[modeId],
+  });
 }
 
 function openReportDialog(result?: AdiProcessRecommendation): void {
@@ -1084,12 +1547,53 @@ function openReportDialog(result?: AdiProcessRecommendation): void {
   }
 }
 
+function openSteelReportDialog(
+  modeId: SteelModeId,
+  result?: SteelProcessRecommendation,
+): void {
+  try {
+    const report = currentSteelReportViewModel(modeId, result);
+    const documentEl = document.querySelector<HTMLElement>("#report-document");
+    const backdrop = document.querySelector<HTMLDivElement>("#report-backdrop");
+    if (!documentEl || !backdrop) {
+      return;
+    }
+
+    documentEl.innerHTML = steelReportHtml(report);
+    backdrop.hidden = false;
+    document.body.classList.add("is-report-open");
+  } catch (error) {
+    showProjectStatus(error instanceof Error ? error.message : "Could not create report.", true);
+  }
+}
+
 function closeReportDialog(): void {
   const backdrop = document.querySelector<HTMLDivElement>("#report-backdrop");
   if (backdrop) {
     backdrop.hidden = true;
   }
   document.body.classList.remove("is-report-open");
+}
+
+function downloadCurrentSteelMarkdownReport(
+  modeId: SteelModeId,
+  result?: SteelProcessRecommendation,
+): void {
+  try {
+    const report = currentSteelReportViewModel(modeId, result);
+    const blob = new Blob([serializeSteelReportMarkdown(report)], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = steelReportMarkdownFilename(modeId as SteelReportModeId, projectMetadata, report.exportedAt);
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showProjectStatus("Markdown report downloaded.");
+  } catch (error) {
+    showProjectStatus(error instanceof Error ? error.message : "Could not download report.", true);
+  }
 }
 
 function downloadCurrentMarkdownReport(result?: AdiProcessRecommendation): void {
@@ -1167,6 +1671,90 @@ function reportHtml(report: ReportViewModel): string {
   `;
 }
 
+function steelReportHtml(report: SteelReportViewModel): string {
+  const warnings = report.recommendation.warnings.length > 0
+    ? report.recommendation.warnings
+    : ["No active risk warnings for the current input set."];
+  const notes = report.metadata.notes.trim() || "No project notes entered.";
+
+  return `
+    <header class="report-document-header">
+      <h1>${escapeHtml(report.title)}</h1>
+      <dl>
+        <div><dt>Generated</dt><dd>${escapeHtml(report.exportedAt)}</dd></div>
+        <div><dt>Customer</dt><dd>${escapeHtml(report.metadata.customerName || "Unspecified")}</dd></div>
+        <div><dt>Part</dt><dd>${escapeHtml(report.metadata.partName || "Unspecified")}</dd></div>
+        <div><dt>Priority</dt><dd>${escapeHtml(report.input.target.priority)}</dd></div>
+      </dl>
+    </header>
+    <section>
+      <h2>Project Notes</h2>
+      <p>${escapeHtml(notes)}</p>
+    </section>
+    <section>
+      <h2>Transformation Estimates</h2>
+      <dl class="report-scores">
+        <div><dt>Ac1</dt><dd>${report.recommendation.transformation.ac1C} °C</dd></div>
+        <div><dt>Ac3</dt><dd>${report.recommendation.transformation.ac3C} °C</dd></div>
+        <div><dt>Ms</dt><dd>${report.recommendation.transformation.msC} °C</dd></div>
+        <div><dt>Bainite Start</dt><dd>${report.recommendation.transformation.bainiteStartC} °C</dd></div>
+      </dl>
+    </section>
+    <section>
+      <h2>Process Windows</h2>
+      <ul>
+        <li><strong>Austenitize:</strong> ${temperatureRangeLabel(report.recommendation.austenitize.temperature, report.unitSystem)}, nominal ${temperatureNominalLabel(report.recommendation.austenitize.temperature, report.unitSystem)}, soak ${report.recommendation.austenitize.soakAfterCoreAtTemp.minMin}-${report.recommendation.austenitize.soakAfterCoreAtTemp.maxMin} min</li>
+        ${steelReportProcessItems(report)}
+      </ul>
+    </section>
+    <section>
+      <h2>Scores</h2>
+      <dl class="report-scores">
+        <div><dt>Confidence</dt><dd>${escapeHtml(report.recommendation.confidence)}</dd></div>
+        <div><dt>Window</dt><dd>${escapeHtml(report.recommendation.processingWindowStatus)}</dd></div>
+        <div><dt>Hardenability</dt><dd>${report.recommendation.transformation.hardenabilityScore.toFixed(2)}</dd></div>
+        <div><dt>Retained Austenite Risk</dt><dd>${report.recommendation.transformation.retainedAusteniteRisk.toFixed(2)}</dd></div>
+      </dl>
+    </section>
+    <section>
+      <h2>Warnings</h2>
+      <ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+    </section>
+    <section>
+      <h2>Validation Checklist</h2>
+      <ul class="report-checklist">
+        ${report.validationChecklist.items.map((item) => `
+          <li>
+            <span>${item.checked ? "Checked" : "Open"}</span>
+            ${escapeHtml(item.label)}
+            ${item.notes.trim() ? `<em>Notes: ${escapeHtml(item.notes.trim())}</em>` : ""}
+          </li>
+        `).join("")}
+      </ul>
+    </section>
+    <section>
+      <h2>Model Notes</h2>
+      <p>Advisory first-pass windows only; validate against steel grade data, Jominy/CCT/TTT behavior, representative coupons, hardness traverse, and metallography before production use.</p>
+    </section>
+  `;
+}
+
+function steelReportProcessItems(report: SteelReportViewModel): string {
+  if (report.recommendation.mode === "steel-austempering") {
+    return `
+      <li><strong>Austemper:</strong> ${temperatureRangeLabel(report.recommendation.austemper.temperature, report.unitSystem)}, nominal ${temperatureNominalLabel(report.recommendation.austemper.temperature, report.unitSystem)}, hold ${report.recommendation.austemper.holdAfterCoreAtTemp.minMin}-${report.recommendation.austemper.holdAfterCoreAtTemp.maxMin} min</li>
+      <li><strong>Expected structure:</strong> ${escapeHtml(report.recommendation.expectedStructure)}</li>
+      <li><strong>Expected hardness:</strong> ${report.recommendation.expectedHardness.minHrc}-${report.recommendation.expectedHardness.maxHrc} HRC</li>
+    `;
+  }
+
+  return `
+    <li><strong>Martemper:</strong> ${temperatureRangeLabel(report.recommendation.martemper.temperature, report.unitSystem)}, nominal ${temperatureNominalLabel(report.recommendation.martemper.temperature, report.unitSystem)}, equalize ${report.recommendation.equalize.minMin}-${report.recommendation.equalize.maxMin} min</li>
+    <li><strong>As-quenched hardness:</strong> ${report.recommendation.asQuenchedHardness.minHrc}-${report.recommendation.asQuenchedHardness.maxHrc} HRC</li>
+    <li><strong>Temper:</strong> ${temperatureRangeLabel(report.recommendation.temper.temperature, report.unitSystem)}, nominal ${temperatureNominalLabel(report.recommendation.temper.temperature, report.unitSystem)}, hold ${report.recommendation.temper.hold.minMin}-${report.recommendation.temper.hold.maxMin} min, target ${report.recommendation.temper.targetHardnessHrc} HRC</li>
+  `;
+}
+
 function reportComparisonHtml(comparison: ComparisonViewModel): string {
   return `
     <section>
@@ -1226,13 +1814,15 @@ function settingsFields(): string {
 }
 
 function syncUnitControls(): void {
-  document.querySelectorAll<HTMLInputElement>('[data-path][type="number"]').forEach((control) => {
-    const path = control.dataset.path ?? "";
+  document.querySelectorAll<HTMLInputElement>('[data-path][type="number"], [data-steel-path][type="number"]').forEach((control) => {
+    const path = control.dataset.path ?? control.dataset.steelPath ?? "";
     if (!isUnitSensitivePath(path)) {
       return;
     }
 
-    const metricValue = getNumericStateValue(path);
+    const metricValue = control.dataset.steelPath
+      ? getSteelNumericStateValue(path)
+      : getNumericStateValue(path);
     if (metricValue !== undefined) {
       control.value = formatNumber(toDisplayValue(path, metricValue, unitSystem));
     }
@@ -1262,6 +1852,27 @@ function getNumericStateValue(path: string): number | undefined {
       return state.geometry.estimatedMassKg;
     case "equipment.bathUniformityC":
       return state.equipment.bathUniformityC;
+    default:
+      return undefined;
+  }
+}
+
+function getSteelNumericStateValue(path: string): number | undefined {
+  const input = activeModeId === "martempering"
+    ? martemperingState
+    : steelAustemperingState;
+
+  switch (path) {
+    case "geometry.maxSectionMm":
+      return input.geometry.maxSectionMm;
+    case "geometry.criticalSectionMm":
+      return input.geometry.criticalSectionMm;
+    case "geometry.minSectionMm":
+      return input.geometry.minSectionMm;
+    case "geometry.estimatedMassKg":
+      return input.geometry.estimatedMassKg;
+    case "equipment.bathUniformityC":
+      return input.equipment.bathUniformityC;
     default:
       return undefined;
   }
@@ -1325,6 +1936,25 @@ function selectField(
   `;
 }
 
+function steelSelectField(
+  path: string,
+  label: string,
+  options: Array<[string, string]>,
+  value: string,
+  helpKey?: string,
+): string {
+  return `
+    <label class="field">
+      ${fieldLabel(label, helpKey)}
+      <select data-steel-path="${path}">
+        ${options
+          .map(([optionValue, optionLabel]) => `<option value="${optionValue}" ${optionValue === value ? "selected" : ""}>${optionLabel}</option>`)
+          .join("")}
+      </select>
+    </label>
+  `;
+}
+
 function numberField(
   id: string,
   label: string,
@@ -1348,12 +1978,47 @@ function numberField(
   `;
 }
 
+function steelNumberField(
+  path: string,
+  label: string,
+  value: number | undefined,
+  step: string,
+  unit = "",
+  helpKey?: string,
+): string {
+  const displayValue = value === undefined || Number.isNaN(value)
+    ? ""
+    : formatNumber(toDisplayValue(path, value, unitSystem));
+  const displayUnit = unitLabelForPath(path, unitSystem, unit);
+
+  return `
+    <label class="field">
+      ${fieldLabel(label, helpKey)}
+      <div class="unit-input">
+        <input data-steel-path="${path}" type="number" value="${displayValue}" step="${step}" min="0" />
+        ${displayUnit ? `<span data-unit-for="${path}">${displayUnit}</span>` : ""}
+      </div>
+    </label>
+  `;
+}
+
 function toggleField(id: string, label: string, checked = false): string {
   return `
     <label class="field toggle-field">
       ${fieldLabel(label, label)}
       <span class="toggle-control">
         <input id="${id}" type="checkbox" ${checked ? "checked" : ""} />
+      </span>
+    </label>
+  `;
+}
+
+function steelToggleField(path: string, label: string, checked = false): string {
+  return `
+    <label class="field toggle-field">
+      ${fieldLabel(label, label)}
+      <span class="toggle-control">
+        <input data-steel-path="${path}" type="checkbox" ${checked ? "checked" : ""} />
       </span>
     </label>
   `;

@@ -125,6 +125,28 @@ select {
   gap: 8px;
 }
 
+.file-input {
+  display: none;
+}
+
+.project-status {
+  min-height: 26px;
+  padding: 6px 18px 0;
+  background: #ffffff;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 720;
+  text-align: right;
+}
+
+.project-status:empty {
+  padding-top: 0;
+}
+
+.project-status.is-error {
+  color: #b42318;
+}
+
 .icon-button {
   width: 40px;
   padding: 0;

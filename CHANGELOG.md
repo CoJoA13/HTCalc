@@ -1,0 +1,18 @@
+# Changelog
+
+All notable project changes are summarized here.
+
+## Unreleased
+
+- Added public repository documentation, contribution guidance, GitHub issue and PR templates, Dependabot configuration, and MIT licensing.
+
+## 0.1.0 - 2026-07-03
+
+- Added ADI process recommendation workflow for ASTM A897 planning.
+- Added project save/load with metadata, validation checklist state, ADI calibration, unit system, active mode, and pinned comparison baseline.
+- Added printable and Markdown reports.
+- Added imperial/metric display toggle.
+- Added process mode shell for ADI, steel austempering, martempering, and planned future steel modes.
+- Added steel austempering model with transformation estimates, austemper windows, estimated hardness, warnings, and validation checks.
+- Added martempering model with interrupted quench, equalization, as-quenched hardness, tempering, warnings, and validation checks.
+- Added CI for tests, typecheck, and build.

@@ -14,6 +14,15 @@ import {
   type ProcessPriority,
   type StartingMatrix,
 } from "../adi/index.js";
+import {
+  isUnitSensitivePath,
+  temperatureNominalLabel,
+  temperatureRangeLabel,
+  toDisplayValue,
+  toMetricValue,
+  type UnitSystem,
+  unitLabelForPath,
+} from "./units.js";
 
 type CompositionKey = keyof AdiProcessInput["composition"];
 type CalibrationKey = keyof AdiModelCalibration;
@@ -184,6 +193,7 @@ const state: AdiProcessInput = {
 };
 
 let calibration: AdiModelCalibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
+let unitSystem: UnitSystem = "imperial";
 
 app.innerHTML = `
   <header class="app-header">
@@ -314,6 +324,19 @@ app.innerHTML = `
         Tune these only after comparing the recommendation against your furnace, bath, coupons, and metallography.
         A value of 1.00 is the default research-based heuristic.
       </div>
+      <div class="settings-section">
+        <div class="settings-section-title">Units</div>
+        <div class="segmented-control" role="radiogroup" aria-label="Unit system">
+          <label>
+            <input type="radio" name="unit-system" value="imperial" checked />
+            <span>Imperial</span>
+          </label>
+          <label>
+            <input type="radio" name="unit-system" value="metric" />
+            <span>Metric</span>
+          </label>
+        </div>
+      </div>
       <div class="settings-grid">
         ${settingsFields()}
       </div>
@@ -395,7 +418,10 @@ function bindSettings(): void {
 
   document.querySelector<HTMLButtonElement>("#settings-reset")?.addEventListener("click", () => {
     calibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
+    unitSystem = "imperial";
     syncCalibrationControls();
+    syncUnitPreferenceControls();
+    syncUnitControls();
     renderRecommendation();
   });
 
@@ -411,6 +437,18 @@ function bindSettings(): void {
         [key]: Number(control.value),
       };
       syncCalibrationControls(key);
+      renderRecommendation();
+    });
+  });
+
+  document.querySelectorAll<HTMLInputElement>('input[name="unit-system"]').forEach((control) => {
+    control.addEventListener("change", () => {
+      if (!control.checked) {
+        return;
+      }
+
+      unitSystem = control.value as UnitSystem;
+      syncUnitControls();
       renderRecommendation();
     });
   });
@@ -431,7 +469,7 @@ function syncCalibrationControls(changedKey?: CalibrationKey): void {
 
 function setValue(path: string, control: HTMLInputElement | HTMLSelectElement): void {
   const value = control instanceof HTMLInputElement && control.type === "number"
-    ? Number(control.value)
+    ? toMetricValue(path, Number(control.value), unitSystem)
     : control.value;
 
   switch (path) {
@@ -498,8 +536,8 @@ function renderRecommendation(): void {
       </div>
 
       <div class="window-group">
-        ${processWindow("ph-thermometer-hot", "Austenitize", `${result.austenitize.temperature.minC}-${result.austenitize.temperature.maxC} °C`, `${result.austenitize.temperature.nominalC} °C`, `${result.austenitize.soakAfterCoreAtTemp.minMin}-${result.austenitize.soakAfterCoreAtTemp.maxMin} min`)}
-        ${processWindow("ph-drop", "Austemper", `${result.austemper.temperature.minC}-${result.austemper.temperature.maxC} °C`, `${result.austemper.temperature.nominalC} °C`, `${result.austemper.holdAfterCoreAtTemp.minMin}-${result.austemper.holdAfterCoreAtTemp.maxMin} min`)}
+        ${processWindow("ph-thermometer-hot", "Austenitize", temperatureRangeLabel(result.austenitize.temperature, unitSystem), temperatureNominalLabel(result.austenitize.temperature, unitSystem), `${result.austenitize.soakAfterCoreAtTemp.minMin}-${result.austenitize.soakAfterCoreAtTemp.maxMin} min`)}
+        ${processWindow("ph-drop", "Austemper", temperatureRangeLabel(result.austemper.temperature, unitSystem), temperatureNominalLabel(result.austemper.temperature, unitSystem), `${result.austemper.holdAfterCoreAtTemp.minMin}-${result.austemper.holdAfterCoreAtTemp.maxMin} min`)}
       </div>
 
       <div class="metric-strip">
@@ -570,6 +608,52 @@ function settingsFields(): string {
     .join("");
 }
 
+function syncUnitControls(): void {
+  document.querySelectorAll<HTMLInputElement>('[data-path][type="number"]').forEach((control) => {
+    const path = control.dataset.path ?? "";
+    if (!isUnitSensitivePath(path)) {
+      return;
+    }
+
+    const metricValue = getNumericStateValue(path);
+    if (metricValue !== undefined) {
+      control.value = formatNumber(toDisplayValue(path, metricValue, unitSystem));
+    }
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-unit-for]").forEach((unitEl) => {
+    const path = unitEl.dataset.unitFor ?? "";
+    unitEl.textContent = unitLabelForPath(path, unitSystem, unitEl.textContent ?? "");
+  });
+}
+
+function syncUnitPreferenceControls(): void {
+  document.querySelectorAll<HTMLInputElement>('input[name="unit-system"]').forEach((control) => {
+    control.checked = control.value === unitSystem;
+  });
+}
+
+function getNumericStateValue(path: string): number | undefined {
+  switch (path) {
+    case "geometry.maxSectionMm":
+      return state.geometry.maxSectionMm;
+    case "geometry.criticalSectionMm":
+      return state.geometry.criticalSectionMm;
+    case "geometry.minSectionMm":
+      return state.geometry.minSectionMm;
+    case "geometry.estimatedMassKg":
+      return state.geometry.estimatedMassKg;
+    case "equipment.bathUniformityC":
+      return state.equipment.bathUniformityC;
+    default:
+      return undefined;
+  }
+}
+
+function formatNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/\.?0+$/, "");
+}
+
 function fieldLabel(label: string, helpKey?: string): string {
   return `<span class="field-label">${label}${helpKey ? helpButton(helpKey) : ""}</span>`;
 }
@@ -614,12 +698,15 @@ function numberField(
   unit = "",
   helpKey?: string,
 ): string {
+  const displayValue = toDisplayValue(id, value, unitSystem);
+  const displayUnit = unitLabelForPath(id, unitSystem, unit);
+
   return `
     <label class="field">
       ${fieldLabel(label, helpKey)}
       <div class="unit-input">
-        <input data-path="${id}" type="number" value="${value}" step="${step}" />
-        ${unit ? `<span>${unit}</span>` : ""}
+        <input data-path="${id}" type="number" value="${formatNumber(displayValue)}" step="${step}" />
+        ${displayUnit ? `<span data-unit-for="${id}">${displayUnit}</span>` : ""}
       </div>
     </label>
   `;

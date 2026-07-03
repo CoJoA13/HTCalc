@@ -600,6 +600,56 @@ button:focus-visible {
   gap: 12px;
 }
 
+.settings-section {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.settings-section-title {
+  color: #172033;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  overflow: hidden;
+  border: 1px solid #c9d3df;
+  border-radius: 7px;
+  background: #ffffff;
+}
+
+.segmented-control label {
+  cursor: pointer;
+}
+
+.segmented-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.segmented-control span {
+  display: grid;
+  place-items: center;
+  height: 38px;
+  color: #384457;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.segmented-control input:checked + span {
+  background: #0f766e;
+  color: #ffffff;
+}
+
+.segmented-control input:focus-visible + span {
+  outline: 3px solid rgb(15 118 110 / 22%);
+  outline-offset: -3px;
+}
+
 .settings-field {
   display: grid;
   gap: 7px;

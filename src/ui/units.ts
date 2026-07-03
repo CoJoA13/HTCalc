@@ -1,6 +1,13 @@
-import type { TemperatureWindow } from "../adi/index.js";
-
 export type UnitSystem = "imperial" | "metric";
+
+export interface TemperatureWindow {
+  readonly minC: number;
+  readonly nominalC: number;
+  readonly maxC: number;
+  readonly minF: number;
+  readonly nominalF: number;
+  readonly maxF: number;
+}
 
 const MM_PER_INCH = 25.4;
 const KG_PER_POUND = 0.45359237;

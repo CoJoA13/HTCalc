@@ -21,7 +21,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -285,6 +286,14 @@ select {
   grid-template-columns: repeat(4, minmax(160px, 1fr));
 }
 
+.metadata-grid {
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+}
+
+.metadata-notes-field {
+  grid-column: 1 / -1;
+}
+
 .field {
   display: grid;
   gap: 6px;
@@ -301,18 +310,31 @@ select {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   width: 100%;
-  height: 38px;
   border: 1px solid #c9d3df;
   border-radius: 6px;
   background: #ffffff;
   color: #172033;
+}
+
+.field input,
+.field select {
+  height: 38px;
   padding: 0 10px;
+}
+
+.field textarea {
+  min-height: 82px;
+  resize: vertical;
+  padding: 9px 10px;
+  line-height: 1.4;
 }
 
 .field input:focus,
 .field select:focus,
+.field textarea:focus,
 button:focus-visible {
   outline: 3px solid rgb(15 118 110 / 22%);
   outline-offset: 1px;
@@ -418,6 +440,17 @@ button:focus-visible {
   gap: 12px;
   padding-bottom: 14px;
   border-bottom: 1px solid #dbe3ec;
+}
+
+.summary-side {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+}
+
+.recommendation-actions {
+  display: flex;
+  gap: 6px;
 }
 
 .eyebrow {
@@ -611,6 +644,119 @@ button:focus-visible {
   color: #526074;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.baseline-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.secondary-action:disabled {
+  color: #98a3b3;
+  background: #f8fafc;
+  cursor: not-allowed;
+}
+
+.comparison-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: #526074;
+  font-size: 12px;
+}
+
+.comparison-meta strong {
+  color: #172033;
+}
+
+.comparison-summary {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  color: #526074;
+  font-size: 12px;
+}
+
+.comparison-table {
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #d7e0ea;
+  border-radius: 7px;
+  font-size: 12px;
+}
+
+.comparison-row {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(3, minmax(54px, 1fr));
+  border-top: 1px solid #e5ebf1;
+}
+
+.comparison-row:first-child {
+  border-top: 0;
+}
+
+.comparison-row span {
+  min-width: 0;
+  padding: 7px 8px;
+  overflow-wrap: anywhere;
+}
+
+.comparison-head {
+  background: #f8fafc;
+  color: #526074;
+  font-weight: 800;
+}
+
+.validation-list {
+  display: grid;
+  gap: 10px;
+}
+
+.validation-item {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #d7e0ea;
+  border-radius: 7px;
+  background: #fbfcfd;
+}
+
+.validation-item label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: #2c394f;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.validation-item input {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  accent-color: #0f766e;
+}
+
+.validation-item textarea {
+  min-height: 58px;
+  resize: vertical;
+  border: 1px solid #c9d3df;
+  border-radius: 6px;
+  padding: 8px;
+  color: #172033;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.empty-note {
+  color: #607086;
+  font-size: 13px;
 }
 
 .warning-list,
@@ -822,6 +968,124 @@ button:focus-visible {
   background: #ffffff;
 }
 
+.report-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: stretch center;
+  overflow: auto;
+  padding: 24px;
+  background: rgb(15 23 42 / 38%);
+}
+
+.report-backdrop[hidden] {
+  display: none;
+}
+
+.report-panel {
+  width: min(860px, 100%);
+  min-height: calc(100vh - 48px);
+  background: #ffffff;
+  box-shadow: 0 20px 50px rgb(15 23 42 / 22%);
+}
+
+.report-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #dbe3ec;
+  background: #ffffff;
+}
+
+.report-toolbar h2 {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+
+.report-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.report-document {
+  padding: 28px;
+  color: #172033;
+}
+
+.report-document h1 {
+  margin: 0 0 16px;
+  font-size: 28px;
+}
+
+.report-document h2 {
+  margin: 22px 0 10px;
+  font-size: 18px;
+}
+
+.report-document p,
+.report-document li,
+.report-document dd,
+.report-document td,
+.report-document th {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.report-document dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
+  margin: 0;
+}
+
+.report-document dl div {
+  display: grid;
+  gap: 2px;
+}
+
+.report-document dt {
+  color: #607086;
+  font-size: 11px;
+  font-weight: 780;
+  text-transform: uppercase;
+}
+
+.report-document dd {
+  margin: 0;
+}
+
+.report-document table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.report-document th,
+.report-document td {
+  border: 1px solid #d7e0ea;
+  padding: 7px 8px;
+  text-align: left;
+}
+
+.report-checklist span {
+  display: inline-flex;
+  min-width: 58px;
+  margin-right: 8px;
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.report-checklist em {
+  display: block;
+  margin-top: 3px;
+  color: #607086;
+  font-style: normal;
+}
+
 @media (max-width: 1180px) {
   .workspace {
     grid-template-columns: 1fr;
@@ -835,7 +1099,8 @@ button:focus-visible {
   .composition-grid,
   .geometry-grid,
   .micro-grid,
-  .equipment-grid {
+  .equipment-grid,
+  .metadata-grid {
     grid-template-columns: repeat(2, minmax(150px, 1fr));
   }
 }
@@ -858,6 +1123,7 @@ button:focus-visible {
   .geometry-grid,
   .micro-grid,
   .equipment-grid,
+  .metadata-grid,
   .metric-strip {
     grid-template-columns: 1fr;
   }
@@ -869,5 +1135,60 @@ button:focus-visible {
 
   .settings-control {
     grid-template-columns: 1fr;
+  }
+
+  .comparison-row {
+    grid-template-columns: 1fr;
+  }
+
+  .report-backdrop {
+    padding: 0;
+  }
+
+  .report-panel {
+    min-height: 100vh;
+  }
+
+  .report-toolbar {
+    align-items: flex-start;
+  }
+
+  .report-document {
+    padding: 18px;
+  }
+
+  .report-document dl {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  .app-header,
+  .project-status,
+  .workspace,
+  .settings-backdrop,
+  .report-toolbar {
+    display: none !important;
+  }
+
+  .report-backdrop {
+    position: static;
+    display: block;
+    padding: 0;
+    background: #ffffff;
+  }
+
+  .report-panel {
+    width: 100%;
+    min-height: auto;
+    box-shadow: none;
+  }
+
+  .report-document {
+    padding: 0;
   }
 }

@@ -665,9 +665,9 @@ function helpButton(helpKey: string): string {
   }
 
   return `
-    <button class="help-button" type="button" aria-label="${helpKey} help" data-tooltip="${text}">
+    <span class="help-button" role="img" tabindex="0" aria-label="${helpKey} help" data-tooltip="${text}">
       ?
-    </button>
+    </span>
   `;
 }
 

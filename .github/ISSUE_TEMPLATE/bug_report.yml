@@ -1,0 +1,60 @@
+name: Bug report
+description: Report incorrect behavior, validation errors, or UI problems.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: dropdown
+    id: process-mode
+    attributes:
+      label: Process mode
+      options:
+        - ADI
+        - Steel austempering
+        - Martempering
+        - Project save/load
+        - Reports/export
+        - Repository/documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include inputs or attach a project file when possible.
+      placeholder: |
+        1. Open ...
+        2. Set ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: validation-impact
+    attributes:
+      label: Engineering or validation impact
+      description: Explain whether this affects a process window, confidence, warning, report, project file, or UI-only workflow.
+  - type: input
+    id: version
+    attributes:
+      label: Browser/version or commit
+      placeholder: Chrome 126, Firefox 127, commit SHA, or branch name

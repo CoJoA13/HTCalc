@@ -27,4 +27,13 @@ describe("active process recommendation rendering", () => {
     const restoreProjectBody = mainSource.match(/function restoreProject[\s\S]*?\n}\n\nfunction replaceAdiInput/)?.[0] ?? "";
     expect(restoreProjectBody).toContain("heatTreatQuoteState = structuredClone(project.heatTreatQuote.input);");
   });
+
+  it("wires the heat-treat RFQ mode to the active workspace and report renderer", () => {
+    expect(mainSource).toContain("function quoteWorkspace");
+    expect(mainSource).toContain("function bindQuoteInputs");
+    expect(mainSource).toContain("function renderQuoteRecommendation");
+    expect(mainSource).toContain('case "heat-treat-rfq":');
+    expect(mainSource).toContain("quoteInputForCurrentState()");
+    expect(mainSource).toContain("quoteAssumptionsForSource");
+  });
 });

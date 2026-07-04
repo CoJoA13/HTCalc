@@ -17,11 +17,17 @@ const SECTION_PATHS = new Set([
   "geometry.criticalSectionMm",
   "geometry.minSectionMm",
 ]);
+const WEIGHT_PATHS = new Set([
+  "geometry.estimatedMassKg",
+  "lot.pieceWeightKg",
+  "lot.totalWeightKg",
+  "lot.loadCapacityKg",
+]);
 
 export function isUnitSensitivePath(path: string): boolean {
   return (
     SECTION_PATHS.has(path) ||
-    path === "geometry.estimatedMassKg" ||
+    WEIGHT_PATHS.has(path) ||
     path === "equipment.bathUniformityC"
   );
 }
@@ -35,7 +41,7 @@ export function toDisplayValue(path: string, metricValue: number, unitSystem: Un
     return metricValue / MM_PER_INCH;
   }
 
-  if (path === "geometry.estimatedMassKg") {
+  if (WEIGHT_PATHS.has(path)) {
     return metricValue / KG_PER_POUND;
   }
 
@@ -55,7 +61,7 @@ export function toMetricValue(path: string, displayValue: number, unitSystem: Un
     return displayValue * MM_PER_INCH;
   }
 
-  if (path === "geometry.estimatedMassKg") {
+  if (WEIGHT_PATHS.has(path)) {
     return displayValue * KG_PER_POUND;
   }
 
@@ -71,7 +77,7 @@ export function unitLabelForPath(path: string, unitSystem: UnitSystem, fallback 
     return unitSystem === "imperial" ? "in" : "mm";
   }
 
-  if (path === "geometry.estimatedMassKg") {
+  if (WEIGHT_PATHS.has(path)) {
     return unitSystem === "imperial" ? "lb" : "kg";
   }
 

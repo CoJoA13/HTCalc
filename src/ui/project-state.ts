@@ -14,7 +14,6 @@ import type { HeatTreatQuoteInput } from "../quote/index.js";
 import {
   PROCESS_MODES,
   type ProcessModeId,
-  type ProjectProcessModeId,
 } from "./process-modes.js";
 import { defaultHeatTreatQuoteInput } from "./quote-state.js";
 import {
@@ -32,7 +31,7 @@ const LEGACY_PROJECT_VERSION = 1;
 const REVIEW_PROJECT_VERSION = 2;
 const STEEL_PROJECT_VERSION = 3;
 
-const validProcessModeIds: ReadonlySet<ProjectProcessModeId> = new Set(
+const validProcessModeIds: ReadonlySet<ProcessModeId> = new Set(
   PROCESS_MODES.map((mode) => mode.id),
 );
 const validUnitSystems: ReadonlySet<UnitSystem> = new Set(["imperial", "metric"]);
@@ -208,7 +207,7 @@ const defaultMetadata: ProjectMetadata = Object.freeze({
   notes: "",
 });
 
-function emptyValidationChecklists(): Record<ProjectProcessModeId, ValidationChecklistState> {
+function emptyValidationChecklists(): Record<ProcessModeId, ValidationChecklistState> {
   return {
     adi: { items: [] },
     "steel-austempering": { items: [] },
@@ -234,10 +233,7 @@ export interface ValidationChecklistState {
   readonly items: readonly ValidationChecklistItem[];
 }
 
-export type ModeValidationChecklists = Readonly<
-  Record<ProcessModeId, ValidationChecklistState> &
-  Partial<Record<"heat-treat-rfq", ValidationChecklistState>>
->;
+export type ModeValidationChecklists = Readonly<Record<ProcessModeId, ValidationChecklistState>>;
 
 export interface PinnedComparisonBaseline {
   readonly label: string;
@@ -271,7 +267,7 @@ export interface HtcalcProjectState {
 }
 
 export interface CreateProjectStateInput {
-  readonly activeModeId: ProjectProcessModeId;
+  readonly activeModeId: ProcessModeId;
   readonly unitSystem: UnitSystem;
   readonly adiInput: AdiProcessInput;
   readonly adiCalibration: AdiModelCalibration;
@@ -288,7 +284,7 @@ export interface CreateProjectStateInput {
 export function createProjectState(input: CreateProjectStateInput): HtcalcProjectState {
   return {
     htcalcProjectVersion: HTCALC_PROJECT_VERSION,
-    activeModeId: input.activeModeId as ProcessModeId,
+    activeModeId: input.activeModeId,
     unitSystem: input.unitSystem,
     exportedAt: input.exportedAt ?? new Date().toISOString(),
     metadata: structuredClone(input.metadata ?? defaultMetadata),
@@ -427,7 +423,7 @@ function parseBaseProject(project: Record<string, unknown>): Omit<
   assertRecord(project.adi, "adi");
 
   return {
-    activeModeId: project.activeModeId as ProcessModeId,
+    activeModeId: project.activeModeId,
     unitSystem: project.unitSystem,
     exportedAt: project.exportedAt,
     adi: {

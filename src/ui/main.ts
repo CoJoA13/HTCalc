@@ -86,6 +86,10 @@ type CalibrationKey = keyof AdiModelCalibration;
 type SteelCompositionKey = keyof SteelComposition;
 type SteelModeId = "steel-austempering" | "martempering";
 
+function isSteelModeId(modeId: ProcessModeId): modeId is SteelModeId {
+  return modeId === "steel-austempering" || modeId === "martempering";
+}
+
 const compositionKeys: CompositionKey[] = [
   "C",
   "Si",
@@ -277,6 +281,7 @@ let validationChecklists: ModeValidationChecklists = {
   adi: { items: [] },
   "steel-austempering": { items: [] },
   martempering: { items: [] },
+  "heat-treat-rfq": { items: [] },
 };
 let pinnedComparisonBaseline: PinnedComparisonBaseline | null = null;
 
@@ -490,6 +495,21 @@ function plannedWorkspace(mode: ProcessMode): string {
         <ul class="check-list">
           ${mode.plannedInputs.map((input) => `<li>${input}</li>`).join("")}
         </ul>
+      </div>
+    </section>
+  `;
+}
+
+function rfqWorkspacePlaceholder(): string {
+  return `
+    <section class="planned-pane" aria-label="Heat-Treat RFQ workspace">
+      <div class="planned-header">
+        <div class="planned-icon"><i class="ph ph-currency-dollar"></i></div>
+        <div>
+          <div class="eyebrow">Heat-Treat RFQ</div>
+          <h1>Quote workspace will be wired in Task 5.</h1>
+          <p>Project files can already save and restore RFQ state.</p>
+        </div>
       </div>
     </section>
   `;
@@ -773,18 +793,21 @@ function renderWorkspace(): void {
     bindHelpButtons();
     syncUnitControls();
     renderRecommendation();
-  } else {
+  } else if (isSteelModeId(mode.id)) {
     bindSteelInputs(mode.id);
     bindHelpButtons();
     syncUnitControls();
     renderSteelRecommendation(mode.id);
+  } else {
+    bindHelpButtons();
+    syncUnitControls();
   }
 }
 
 function renderActiveRecommendation(): void {
   if (activeModeId === "adi") {
     renderRecommendation();
-  } else {
+  } else if (isSteelModeId(activeModeId)) {
     renderSteelRecommendation(activeModeId);
   }
 }
@@ -797,6 +820,8 @@ function workspaceForMode(mode: ProcessMode): string {
       return steelAustemperingWorkspace();
     case "martempering":
       return martemperingWorkspace();
+    case "heat-treat-rfq":
+      return rfqWorkspacePlaceholder();
     default:
       return plannedWorkspace(mode);
   }
@@ -999,7 +1024,7 @@ function bindReportDialog(): void {
   document.querySelector<HTMLButtonElement>("#report-download")?.addEventListener("click", () => {
     if (activeModeId === "adi") {
       downloadCurrentMarkdownReport();
-    } else {
+    } else if (isSteelModeId(activeModeId)) {
       downloadCurrentSteelMarkdownReport(activeModeId);
     }
   });

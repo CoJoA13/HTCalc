@@ -1,9 +1,8 @@
-export type ProcessModeId = "adi" | "steel-austempering" | "martempering";
-export type ProjectProcessModeId = ProcessModeId | "heat-treat-rfq";
+export type ProcessModeId = "adi" | "steel-austempering" | "martempering" | "heat-treat-rfq";
 export type ProcessModeStatus = "implemented" | "planned";
 
 export interface ProcessMode {
-  readonly id: ProjectProcessModeId;
+  readonly id: ProcessModeId;
   readonly label: string;
   readonly icon: string;
   readonly status: ProcessModeStatus;
@@ -11,17 +10,7 @@ export interface ProcessMode {
   readonly plannedInputs: readonly string[];
 }
 
-interface RenderedProcessMode extends ProcessMode {
-  readonly id: ProcessModeId;
-}
-
-interface HeatTreatRfqProcessMode extends ProcessMode {
-  readonly id: "heat-treat-rfq";
-}
-
-type AnyProcessMode = RenderedProcessMode | HeatTreatRfqProcessMode;
-
-export const PROCESS_MODES: readonly AnyProcessMode[] = Object.freeze([
+export const PROCESS_MODES: readonly ProcessMode[] = Object.freeze([
   {
     id: "adi",
     label: "ADI",
@@ -66,10 +55,7 @@ export const PROCESS_MODES: readonly AnyProcessMode[] = Object.freeze([
   },
 ]);
 
-export function getProcessMode(id: ProcessModeId): RenderedProcessMode;
-export function getProcessMode(id: "heat-treat-rfq"): HeatTreatRfqProcessMode;
-export function getProcessMode(id: ProjectProcessModeId): AnyProcessMode;
-export function getProcessMode(id: ProjectProcessModeId): AnyProcessMode {
+export function getProcessMode(id: ProcessModeId): ProcessMode {
   const mode = PROCESS_MODES.find((candidate) => candidate.id === id);
   if (!mode) {
     throw new RangeError(`Unknown process mode: ${id}`);
@@ -78,10 +64,10 @@ export function getProcessMode(id: ProjectProcessModeId): AnyProcessMode {
   return mode;
 }
 
-export function implementedProcessModes(): readonly AnyProcessMode[] {
+export function implementedProcessModes(): readonly ProcessMode[] {
   return PROCESS_MODES.filter((mode) => mode.status === "implemented");
 }
 
-export function plannedProcessModes(): readonly AnyProcessMode[] {
+export function plannedProcessModes(): readonly ProcessMode[] {
   return PROCESS_MODES.filter((mode) => mode.status === "planned");
 }

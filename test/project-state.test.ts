@@ -13,7 +13,10 @@ import {
   parseProjectState,
   serializeProjectState,
 } from "../src/ui/project-state.js";
+import type { ProcessModeId } from "../src/ui/process-modes.js";
 import { defaultHeatTreatQuoteInput } from "../src/ui/quote-state.js";
+
+const rfqModeId: ProcessModeId = "heat-treat-rfq";
 
 const adiInput = {
   composition: {
@@ -273,7 +276,7 @@ describe("project state serialization", () => {
     };
 
     const project = createProjectState({
-      activeModeId: "heat-treat-rfq",
+      activeModeId: rfqModeId,
       unitSystem: "imperial",
       adiInput,
       adiCalibration: DEFAULT_ADI_MODEL_CALIBRATION,
@@ -336,7 +339,7 @@ describe("project state serialization", () => {
 
   it("round-trips version 4 quote state through JSON", () => {
     const parsed = parseProjectState(JSON.stringify(version4Project({
-      activeModeId: "heat-treat-rfq",
+      activeModeId: rfqModeId,
     })));
 
     expect(parsed.htcalcProjectVersion).toBe(4);

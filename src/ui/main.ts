@@ -16,6 +16,16 @@ import {
   type StartingMatrix,
 } from "../adi/index.js";
 import {
+  quoteAssumptionsFromAdi,
+  quoteAssumptionsFromMartempering,
+  quoteAssumptionsFromSteelAustempering,
+  recommendHeatTreatQuote,
+  type HeatTreatQuoteInput,
+  type HeatTreatQuoteRecommendation,
+  type HeatTreatQuoteSourceMode,
+  type ImportedProcessAssumptions,
+} from "../quote/index.js";
+import {
   recommendMartemperingProcess,
   recommendSteelAustemperingProcess,
   type MartemperingInput,
@@ -48,6 +58,16 @@ import {
   type ProjectMetadata,
   type ValidationChecklistState,
 } from "./project-state.js";
+import {
+  createQuoteReportViewModel,
+  quoteReportMarkdownFilename,
+  serializeQuoteReportMarkdown,
+  type QuoteReportViewModel,
+} from "./quote-report.js";
+import {
+  defaultHeatTreatQuoteInput,
+  setHeatTreatQuoteInputValue,
+} from "./quote-state.js";
 import {
   createReportViewModel,
   reportMarkdownFilename,
@@ -85,6 +105,10 @@ type CompositionKey = keyof AdiProcessInput["composition"];
 type CalibrationKey = keyof AdiModelCalibration;
 type SteelCompositionKey = keyof SteelComposition;
 type SteelModeId = "steel-austempering" | "martempering";
+
+function isSteelModeId(modeId: ProcessModeId): modeId is SteelModeId {
+  return modeId === "steel-austempering" || modeId === "martempering";
+}
 
 const compositionKeys: CompositionKey[] = [
   "C",
@@ -265,6 +289,9 @@ const state: AdiProcessInput = {
 
 let steelAustemperingState: SteelAustemperingInput = defaultSteelAustemperingInput();
 let martemperingState: MartemperingInput = defaultMartemperingInput();
+let heatTreatQuoteState: HeatTreatQuoteInput = defaultHeatTreatQuoteInput();
+let manualQuoteProcessSummary = heatTreatQuoteState.processSummary;
+let manualQuoteImportedProcess: ImportedProcessAssumptions = structuredClone(heatTreatQuoteState.importedProcess);
 let calibration: AdiModelCalibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
 let unitSystem: UnitSystem = "imperial";
 let activeModeId: ProcessModeId = "adi";
@@ -277,6 +304,7 @@ let validationChecklists: ModeValidationChecklists = {
   adi: { items: [] },
   "steel-austempering": { items: [] },
   martempering: { items: [] },
+  "heat-treat-rfq": { items: [] },
 };
 let pinnedComparisonBaseline: PinnedComparisonBaseline | null = null;
 
@@ -493,6 +521,89 @@ function plannedWorkspace(mode: ProcessMode): string {
       </div>
     </section>
   `;
+}
+
+function quoteWorkspace(): string {
+  const input = quoteWorkspaceInput();
+
+  return `
+    <section class="input-pane" aria-label="Heat-treat RFQ inputs">
+      ${projectDetailsSection()}
+
+      <div class="section-block">
+        <div class="section-heading"><i class="ph ph-git-branch"></i><span>1. Quote Source</span></div>
+        <div class="field-grid target-grid">
+          ${quoteSelectField("sourceMode", "Source", [
+            ["adi", "Use current ADI recipe"],
+            ["steel-austempering", "Use current Steel Austempering recipe"],
+            ["martempering", "Use current Martempering recipe"],
+            ["manual", "Manual quote"],
+          ], input.sourceMode)}
+          ${quoteTextField("processSummary", "Process Summary", input.processSummary, input.sourceMode !== "manual")}
+        </div>
+      </div>
+
+      <div class="section-block">
+        <div class="section-heading"><i class="ph ph-package"></i><span>2. Lot</span></div>
+        <div class="field-grid geometry-grid">
+          ${quoteNumberField("lot.quantity", "Quantity", input.lot.quantity, "1", "pcs")}
+          ${quoteNumberField("lot.pieceWeightKg", "Piece Weight", input.lot.pieceWeightKg, "0.1", "kg")}
+          ${quoteNumberField("lot.totalWeightKg", "Total Weight", input.lot.totalWeightKg, "0.1", "kg")}
+          ${quoteNumberField("lot.loadCapacityKg", "Load Capacity", input.lot.loadCapacityKg, "0.1", "kg")}
+          ${quoteNumberField("lot.laborHoursPerLoad", "Labor/Load", input.lot.laborHoursPerLoad, "0.1", "h")}
+          ${quoteNumberField("lot.cycleCountOverride", "Cycle Override", input.lot.cycleCountOverride, "1", "cycles")}
+        </div>
+      </div>
+
+      <div class="section-block">
+        <div class="section-heading"><i class="ph ph-currency-dollar"></i><span>3. Shop Rates</span></div>
+        <div class="field-grid equipment-grid">
+          ${quoteNumberField("shopRates.minimumLotCharge", "Minimum Lot", input.shopRates.minimumLotCharge, "1", "$")}
+          ${quoteNumberField("shopRates.setupAdminCharge", "Setup/Admin", input.shopRates.setupAdminCharge, "1", "$")}
+          ${quoteNumberField("shopRates.laborRatePerHour", "Labor Rate", input.shopRates.laborRatePerHour, "1", "$/h")}
+          ${quoteNumberField("shopRates.furnaceRatePerHour", "Furnace Rate", input.shopRates.furnaceRatePerHour, "1", "$/h")}
+          ${quoteNumberField("shopRates.bathQuenchRatePerHour", "Bath/Quench Rate", input.shopRates.bathQuenchRatePerHour, "1", "$/h")}
+          ${quoteNumberField("shopRates.temperFurnaceRatePerHour", "Temper Rate", input.shopRates.temperFurnaceRatePerHour, "1", "$/h")}
+          ${quoteNumberField("shopRates.inspectionBaseCharge", "Inspection", input.shopRates.inspectionBaseCharge, "1", "$")}
+          ${quoteNumberField("shopRates.consumablesPerKg", "Consumables", input.shopRates.consumablesPerKg, "0.01", "$/kg")}
+          ${quoteNumberField("shopRates.handlingPackagingCharge", "Handling/Pkg", input.shopRates.handlingPackagingCharge, "1", "$")}
+          ${quoteNumberField("shopRates.overheadPercent", "Overhead", input.shopRates.overheadPercent, "0.1", "%")}
+          ${quoteNumberField("shopRates.targetMarginPercent", "Margin", input.shopRates.targetMarginPercent, "0.1", "%")}
+        </div>
+      </div>
+
+      <div class="section-block">
+        <div class="section-heading"><i class="ph ph-sliders"></i><span>4. Overrides & Adjustments</span></div>
+        <div class="field-grid equipment-grid">
+          ${quoteNumberField("manualOverrides.billableFurnaceHours", "Furnace Hours", input.manualOverrides.billableFurnaceHours, "0.1", "h")}
+          ${quoteNumberField("manualOverrides.billableBathQuenchHours", "Bath/Quench Hours", input.manualOverrides.billableBathQuenchHours, "0.1", "h")}
+          ${quoteNumberField("manualOverrides.billableTemperHours", "Temper Hours", input.manualOverrides.billableTemperHours, "0.1", "h")}
+          ${quoteNumberField("manualOverrides.billableLaborHours", "Labor Hours", input.manualOverrides.billableLaborHours, "0.1", "h")}
+          ${quoteNumberField("manualOverrides.billableCycleCount", "Billable Cycles", input.manualOverrides.billableCycleCount, "1", "cycles")}
+          ${quoteNumberField("adjustments.complexityFactor", "Complexity", input.adjustments.complexityFactor, "0.05", "x")}
+          ${quoteNumberField("adjustments.scrapReworkReservePercent", "Scrap Reserve", input.adjustments.scrapReworkReservePercent, "0.1", "%")}
+          ${quoteNumberField("adjustments.expediteMultiplier", "Expedite", input.adjustments.expediteMultiplier, "0.05", "x")}
+          ${quoteNumberField("adjustments.manualAdderDiscount", "Adder/Discount", input.adjustments.manualAdderDiscount, "1", "$")}
+        </div>
+      </div>
+    </section>
+
+    <aside class="result-pane" aria-label="Heat-treat RFQ recommendation">
+      <div id="recommendation"></div>
+    </aside>
+  `;
+}
+
+function quoteWorkspaceInput(): HeatTreatQuoteInput {
+  if (heatTreatQuoteState.sourceMode === "manual") {
+    return heatTreatQuoteState;
+  }
+
+  try {
+    return quoteInputForCurrentState();
+  } catch {
+    return heatTreatQuoteState;
+  }
 }
 
 function steelAustemperingWorkspace(): string {
@@ -723,6 +834,103 @@ function bindSteelInputs(modeId: SteelModeId): void {
   });
 }
 
+function bindQuoteInputs(): void {
+  bindMetadataInputs();
+
+  document.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-quote-path]").forEach((control) => {
+    const eventName = control instanceof HTMLSelectElement ? "change" : "input";
+    control.addEventListener(eventName, () => {
+      const path = control.dataset.quotePath ?? "";
+      const previousSourceMode = heatTreatQuoteState.sourceMode;
+      const value = control instanceof HTMLInputElement && control.type === "number"
+        ? parseNumericInputValue(path, control.value, unitSystem)
+        : control.value;
+
+      if (path === "sourceMode" && previousSourceMode === "manual") {
+        captureManualQuoteSource();
+      }
+
+      setHeatTreatQuoteInputValue(heatTreatQuoteState, path, value);
+
+      if (path === "sourceMode") {
+        if (heatTreatQuoteState.sourceMode === "manual") {
+          restoreManualQuoteSource();
+        } else {
+          try {
+            refreshQuoteSourceSummary();
+          } catch (error) {
+            showProjectStatus(error instanceof Error ? error.message : "Could not import quote assumptions.", true);
+          }
+        }
+        renderWorkspace();
+        return;
+      }
+
+      if (path === "processSummary" && heatTreatQuoteState.sourceMode === "manual") {
+        syncManualQuoteSource();
+      }
+
+      renderQuoteRecommendation();
+    });
+  });
+}
+
+function syncManualQuoteSource(): HeatTreatQuoteInput {
+  const processSummary = heatTreatQuoteState.processSummary;
+  heatTreatQuoteState = {
+    ...heatTreatQuoteState,
+    sourceMode: "manual",
+    processSummary,
+    importedProcess: {
+      ...heatTreatQuoteState.importedProcess,
+      sourceMode: "manual",
+      processLabel: processSummary,
+    },
+  };
+  captureManualQuoteSource();
+
+  return heatTreatQuoteState;
+}
+
+function captureManualQuoteSource(): void {
+  manualQuoteProcessSummary = heatTreatQuoteState.processSummary;
+  manualQuoteImportedProcess = structuredClone(heatTreatQuoteState.importedProcess);
+}
+
+function restoreManualQuoteSource(): void {
+  heatTreatQuoteState = {
+    ...heatTreatQuoteState,
+    processSummary: manualQuoteProcessSummary,
+    importedProcess: structuredClone(manualQuoteImportedProcess),
+  };
+  syncManualQuoteSource();
+}
+
+function resetManualQuoteSourceCache(input: HeatTreatQuoteInput): void {
+  const manualInput = input.sourceMode === "manual"
+    ? input
+    : defaultHeatTreatQuoteInput();
+  manualQuoteProcessSummary = manualInput.processSummary;
+  manualQuoteImportedProcess = {
+    ...structuredClone(manualInput.importedProcess),
+    sourceMode: "manual",
+    processLabel: manualInput.processSummary,
+  };
+}
+
+function refreshQuoteSourceSummary(): void {
+  if (heatTreatQuoteState.sourceMode === "manual") {
+    return;
+  }
+
+  const importedProcess = quoteAssumptionsForSource(heatTreatQuoteState.sourceMode);
+  heatTreatQuoteState = {
+    ...heatTreatQuoteState,
+    processSummary: importedProcess.processLabel,
+    importedProcess,
+  };
+}
+
 function bindMetadataInputs(): void {
   document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[data-metadata]").forEach((control) => {
     control.addEventListener("input", () => {
@@ -773,19 +981,29 @@ function renderWorkspace(): void {
     bindHelpButtons();
     syncUnitControls();
     renderRecommendation();
-  } else {
+  } else if (isSteelModeId(mode.id)) {
     bindSteelInputs(mode.id);
     bindHelpButtons();
     syncUnitControls();
     renderSteelRecommendation(mode.id);
+  } else if (mode.id === "heat-treat-rfq") {
+    bindQuoteInputs();
+    bindHelpButtons();
+    syncUnitControls();
+    renderQuoteRecommendation();
+  } else {
+    bindHelpButtons();
+    syncUnitControls();
   }
 }
 
 function renderActiveRecommendation(): void {
   if (activeModeId === "adi") {
     renderRecommendation();
-  } else {
+  } else if (isSteelModeId(activeModeId)) {
     renderSteelRecommendation(activeModeId);
+  } else if (activeModeId === "heat-treat-rfq") {
+    renderQuoteRecommendation();
   }
 }
 
@@ -797,6 +1015,8 @@ function workspaceForMode(mode: ProcessMode): string {
       return steelAustemperingWorkspace();
     case "martempering":
       return martemperingWorkspace();
+    case "heat-treat-rfq":
+      return quoteWorkspace();
     default:
       return plannedWorkspace(mode);
   }
@@ -856,6 +1076,7 @@ function saveProject(): void {
     adiCalibration: calibration,
     steelAustemperingInput: steelAustemperingState,
     martemperingInput: martemperingState,
+    heatTreatQuoteInput: heatTreatQuoteState,
     metadata: projectMetadata,
     validationChecklists,
     pinnedComparisonBaseline,
@@ -880,6 +1101,8 @@ function restoreProject(project: HtcalcProjectState): void {
   validationChecklists = structuredClone(project.validationChecklists);
   steelAustemperingState = structuredClone(project.steelAustempering.input);
   martemperingState = structuredClone(project.martempering.input);
+  heatTreatQuoteState = structuredClone(project.heatTreatQuote.input);
+  resetManualQuoteSourceCache(project.heatTreatQuote.input);
   pinnedComparisonBaseline = project.pinnedComparisonBaseline
     ? structuredClone(project.pinnedComparisonBaseline)
     : null;
@@ -999,8 +1222,10 @@ function bindReportDialog(): void {
   document.querySelector<HTMLButtonElement>("#report-download")?.addEventListener("click", () => {
     if (activeModeId === "adi") {
       downloadCurrentMarkdownReport();
-    } else {
+    } else if (isSteelModeId(activeModeId)) {
       downloadCurrentSteelMarkdownReport(activeModeId);
+    } else if (activeModeId === "heat-treat-rfq") {
+      downloadCurrentQuoteMarkdownReport();
     }
   });
 
@@ -1282,6 +1507,183 @@ function renderSteelRecommendation(modeId: SteelModeId): void {
   }
 }
 
+function renderQuoteRecommendation(): void {
+  const recommendationPanel = document.querySelector<HTMLDivElement>("#recommendation");
+  if (!recommendationPanel) {
+    return;
+  }
+
+  try {
+    const quoteInput = quoteInputForCurrentState();
+    if (!quoteInputHasPricingBasis(quoteInput)) {
+      renderIncompleteQuoteState(recommendationPanel);
+      return;
+    }
+
+    const result = recommendHeatTreatQuote(quoteInput);
+    setValidationChecklist(
+      "heat-treat-rfq",
+      reconcileValidationChecklist(validationChecklists["heat-treat-rfq"], result.validationChecks),
+    );
+    const confidenceClass = `confidence-${result.confidence}`;
+    const assumptions = result.importedAssumptions.length > 0
+      ? result.importedAssumptions
+      : ["No imported assumptions for the current quote."];
+    const warnings = result.warnings.length > 0
+      ? result.warnings
+      : ["No active quote warnings for the current input set."];
+
+    recommendationPanel.innerHTML = `
+      <div class="summary-header">
+        <div>
+          <div class="eyebrow">Heat-Treat RFQ</div>
+          <h2>${formatCurrency(result.lotPrice)}</h2>
+          <p>${escapeHtml(result.processSummary)}</p>
+        </div>
+        <div class="summary-side">
+          <span class="confidence ${confidenceClass}">${result.confidence}</span>
+          <div class="recommendation-actions">
+            <button class="icon-button" data-quote-report-action="open" type="button" title="Open printable report">
+              <i class="ph ph-file-text"></i>
+            </button>
+            <button class="icon-button" data-quote-report-action="print" type="button" title="Print report">
+              <i class="ph ph-printer"></i>
+            </button>
+            <button class="icon-button" data-quote-report-action="markdown" type="button" title="Download Markdown report">
+              <i class="ph ph-download-simple"></i>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="metric-strip">
+        ${metric("Unit Price", formatCurrency(result.unitPrice), "per piece")}
+        ${metric("Price/kg", result.pricePerKg === null ? "Unavailable" : `${formatCurrency(result.pricePerKg)}/kg`, "weight basis")}
+        ${metric("Cycles", result.cycleCount === null ? "Manual" : String(result.cycleCount), "billable")}
+        ${metric("Confidence", result.confidence, quoteSourceLabel(result.sourceMode))}
+      </div>
+
+      <div class="result-section">
+        <div class="result-title"><i class="ph ph-list-checks"></i> Customer Summary</div>
+        <ul class="check-list">${result.customerSummaryLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
+      </div>
+
+      <div class="result-section">
+        <div class="result-title"><i class="ph ph-git-branch"></i> Imported Assumptions</div>
+        <ul class="check-list">${assumptions.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
+      </div>
+
+      <div class="result-section">
+        <div class="result-title"><i class="ph ph-calculator"></i> Cost Breakdown</div>
+        ${quoteCostBreakdownRows(result.breakdown)}
+      </div>
+
+      <div class="result-section">
+        <div class="result-title"><i class="ph ph-warning"></i> Warnings</div>
+        <ul class="warning-list">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+      </div>
+
+      <div class="result-section">
+        <div class="result-title"><i class="ph ph-check-square"></i> Validation Checks</div>
+        ${validationChecklistRows(validationChecklists["heat-treat-rfq"])}
+      </div>
+    `;
+    bindQuoteRecommendationActions(result);
+    bindChecklistControls();
+  } catch (error) {
+    recommendationPanel.innerHTML = `
+      <div class="error-state">
+        <i class="ph ph-warning-octagon"></i>
+        <h2>RFQ needs pricing inputs</h2>
+        <p>${escapeHtml(error instanceof Error ? error.message : "Unable to calculate quote recommendation.")}</p>
+      </div>
+    `;
+  }
+}
+
+function renderIncompleteQuoteState(recommendationPanel: HTMLDivElement): void {
+  recommendationPanel.innerHTML = `
+    <div class="result-section">
+      <div class="result-title"><i class="ph ph-calculator"></i> Pricing Basis Needed</div>
+      <p>Enter lot weight/load capacity or manual billable hours to calculate a quote.</p>
+    </div>
+  `;
+}
+
+function quoteInputForCurrentState(): HeatTreatQuoteInput {
+  if (heatTreatQuoteState.sourceMode === "manual") {
+    return syncManualQuoteSource();
+  }
+
+  const importedProcess = quoteAssumptionsForSource(heatTreatQuoteState.sourceMode);
+  const input: HeatTreatQuoteInput = {
+    ...heatTreatQuoteState,
+    processSummary: importedProcess.processLabel,
+    importedProcess,
+  };
+  heatTreatQuoteState = input;
+
+  return input;
+}
+
+function quoteInputHasPricingBasis(input: HeatTreatQuoteInput): boolean {
+  const hasTotalWeight = input.lot.totalWeightKg !== undefined || input.lot.pieceWeightKg !== undefined;
+  const hasCycleBasis = (
+    input.manualOverrides.billableCycleCount !== undefined ||
+    input.lot.cycleCountOverride !== undefined ||
+    (hasTotalWeight && input.lot.loadCapacityKg !== undefined)
+  );
+
+  if (hasCycleBasis) {
+    return true;
+  }
+
+  if (!quoteInputHasManualBillableHours(input)) {
+    return false;
+  }
+
+  return !quoteInputHasImportedTimeWithoutManualOverride(input);
+}
+
+function quoteInputHasManualBillableHours(input: HeatTreatQuoteInput): boolean {
+  return (
+    input.manualOverrides.billableFurnaceHours !== undefined ||
+    input.manualOverrides.billableBathQuenchHours !== undefined ||
+    input.manualOverrides.billableTemperHours !== undefined ||
+    input.manualOverrides.billableLaborHours !== undefined
+  );
+}
+
+function quoteInputHasImportedTimeWithoutManualOverride(input: HeatTreatQuoteInput): boolean {
+  return (
+    (input.importedProcess.austenitizeMinutes !== undefined &&
+      input.manualOverrides.billableFurnaceHours === undefined) ||
+    (input.importedProcess.bathMinutes !== undefined &&
+      input.manualOverrides.billableBathQuenchHours === undefined) ||
+    (input.importedProcess.temperMinutes !== undefined &&
+      input.manualOverrides.billableTemperHours === undefined)
+  );
+}
+
+function quoteAssumptionsForSource(sourceMode: HeatTreatQuoteSourceMode): ImportedProcessAssumptions {
+  switch (sourceMode) {
+    case "adi":
+      return quoteAssumptionsFromAdi(recommendAdiProcess(state, calibration));
+    case "steel-austempering":
+      return quoteAssumptionsFromSteelAustempering(recommendSteelAustemperingProcess(steelAustemperingState));
+    case "martempering":
+      return quoteAssumptionsFromMartempering(recommendMartemperingProcess(martemperingState));
+    case "manual":
+      return {
+        ...structuredClone(heatTreatQuoteState.importedProcess),
+        sourceMode: "manual",
+        processLabel: heatTreatQuoteState.processSummary || heatTreatQuoteState.importedProcess.processLabel,
+      };
+    default:
+      throw new RangeError(`Unknown heat-treat quote source mode: ${String(sourceMode)}`);
+  }
+}
+
 function recommendSteelForMode(modeId: SteelModeId): SteelProcessRecommendation {
   return modeId === "steel-austempering"
     ? recommendSteelAustemperingProcess(steelAustemperingState)
@@ -1393,6 +1795,23 @@ function bindSteelRecommendationActions(
   });
 }
 
+function bindQuoteRecommendationActions(result: HeatTreatQuoteRecommendation): void {
+  document.querySelector<HTMLButtonElement>('[data-quote-report-action="open"]')?.addEventListener("click", () => {
+    openQuoteReportDialog(result);
+  });
+
+  document.querySelector<HTMLButtonElement>('[data-quote-report-action="print"]')?.addEventListener("click", () => {
+    openQuoteReportDialog(result);
+    requestAnimationFrame(() => {
+      window.print();
+    });
+  });
+
+  document.querySelector<HTMLButtonElement>('[data-quote-report-action="markdown"]')?.addEventListener("click", () => {
+    downloadCurrentQuoteMarkdownReport(result);
+  });
+}
+
 function bindChecklistControls(): void {
   document.querySelectorAll<HTMLInputElement>("[data-checklist-check]").forEach((control) => {
     control.addEventListener("change", () => {
@@ -1493,6 +1912,59 @@ function baselineLabel(result: AdiProcessRecommendation): string {
   return `${projectLabel || result.expectedGrade} baseline`;
 }
 
+function quoteCostBreakdownRows(breakdown: HeatTreatQuoteRecommendation["breakdown"]): string {
+  return `
+    <div class="comparison-table" role="table" aria-label="RFQ cost breakdown">
+      <div class="comparison-row comparison-head" role="row">
+        <span>Bucket</span><span>Amount</span>
+      </div>
+      ${quoteCostBreakdownEntries(breakdown).map(([label, value]) => `
+        <div class="comparison-row" role="row">
+          <span>${escapeHtml(label)}</span>
+          <span>${formatCurrency(value)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function quoteCostBreakdownEntries(
+  breakdown: HeatTreatQuoteRecommendation["breakdown"],
+): Array<[string, number]> {
+  return [
+    ["Setup/admin", breakdown.setupAdmin],
+    ["Furnace", breakdown.furnace],
+    ["Bath/quench", breakdown.bathQuench],
+    ["Temper", breakdown.temper],
+    ["Labor", breakdown.labor],
+    ["Inspection", breakdown.inspection],
+    ["Consumables", breakdown.consumables],
+    ["Handling/packaging", breakdown.handlingPackaging],
+    ["Scrap/rework reserve", breakdown.scrapReworkReserve],
+    ["Overhead", breakdown.overhead],
+    ["Margin", breakdown.margin],
+    ["Expedite", breakdown.expedite],
+    ["Manual adder/discount", breakdown.manualAdderDiscount],
+    ["Minimum charge adjustment", breakdown.minimumChargeAdjustment],
+    ["Total", breakdown.total],
+  ];
+}
+
+function quoteSourceLabel(sourceMode: HeatTreatQuoteSourceMode): string {
+  switch (sourceMode) {
+    case "adi":
+      return "ADI";
+    case "steel-austempering":
+      return "Steel austempering";
+    case "martempering":
+      return "Martempering";
+    case "manual":
+      return "Manual";
+    default:
+      return sourceMode;
+  }
+}
+
 function currentReportViewModel(result?: AdiProcessRecommendation): ReportViewModel {
   const recommendation = result ?? recommendAdiProcess(state, calibration);
   setValidationChecklist(
@@ -1539,6 +2011,23 @@ function currentSteelReportViewModel(
   });
 }
 
+function currentQuoteReportViewModel(result?: HeatTreatQuoteRecommendation): QuoteReportViewModel {
+  const input = quoteInputForCurrentState();
+  const recommendation = result ?? recommendHeatTreatQuote(input);
+  setValidationChecklist(
+    "heat-treat-rfq",
+    reconcileValidationChecklist(validationChecklists["heat-treat-rfq"], recommendation.validationChecks),
+  );
+
+  return createQuoteReportViewModel({
+    exportedAt: new Date().toISOString(),
+    metadata: projectMetadata,
+    input,
+    recommendation,
+    validationChecklist: validationChecklists["heat-treat-rfq"],
+  });
+}
+
 function openReportDialog(result?: AdiProcessRecommendation): void {
   try {
     const report = currentReportViewModel(result);
@@ -1576,6 +2065,23 @@ function openSteelReportDialog(
   }
 }
 
+function openQuoteReportDialog(result?: HeatTreatQuoteRecommendation): void {
+  try {
+    const report = currentQuoteReportViewModel(result);
+    const documentEl = document.querySelector<HTMLElement>("#report-document");
+    const backdrop = document.querySelector<HTMLDivElement>("#report-backdrop");
+    if (!documentEl || !backdrop) {
+      return;
+    }
+
+    documentEl.innerHTML = quoteReportHtml(report);
+    backdrop.hidden = false;
+    document.body.classList.add("is-report-open");
+  } catch (error) {
+    showProjectStatus(error instanceof Error ? error.message : "Could not create quote report.", true);
+  }
+}
+
 function closeReportDialog(): void {
   const backdrop = document.querySelector<HTMLDivElement>("#report-backdrop");
   if (backdrop) {
@@ -1605,6 +2111,24 @@ function downloadCurrentSteelMarkdownReport(
   }
 }
 
+function downloadCurrentQuoteMarkdownReport(result?: HeatTreatQuoteRecommendation): void {
+  try {
+    const report = currentQuoteReportViewModel(result);
+    const blob = new Blob([serializeQuoteReportMarkdown(report)], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = quoteReportMarkdownFilename(projectMetadata, report.exportedAt);
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showProjectStatus("Markdown report downloaded.");
+  } catch (error) {
+    showProjectStatus(error instanceof Error ? error.message : "Could not download quote report.", true);
+  }
+}
+
 function downloadCurrentMarkdownReport(result?: AdiProcessRecommendation): void {
   try {
     const report = currentReportViewModel(result);
@@ -1621,6 +2145,106 @@ function downloadCurrentMarkdownReport(result?: AdiProcessRecommendation): void 
   } catch (error) {
     showProjectStatus(error instanceof Error ? error.message : "Could not download report.", true);
   }
+}
+
+function quoteReportHtml(report: QuoteReportViewModel): string {
+  const notes = report.metadata.notes.trim() || "No project notes entered.";
+  const warnings = report.recommendation.warnings.length > 0
+    ? report.recommendation.warnings
+    : ["No active quote warnings for the current input set."];
+  const assumptions = report.recommendation.importedAssumptions.length > 0
+    ? report.recommendation.importedAssumptions
+    : ["No imported assumptions."];
+  const customerSummaryLines = report.recommendation.customerSummaryLines.length > 0
+    ? report.recommendation.customerSummaryLines
+    : ["No customer quote summary lines generated."];
+  const internalNotes = report.recommendation.internalNotes.length > 0
+    ? report.recommendation.internalNotes
+    : ["No internal quote notes generated."];
+
+  return `
+    <header class="report-document-header">
+      <h1>${escapeHtml(report.title)}</h1>
+      <dl>
+        <div><dt>Generated</dt><dd>${escapeHtml(report.exportedAt)}</dd></div>
+        <div><dt>Customer</dt><dd>${escapeHtml(report.metadata.customerName || "Unspecified")}</dd></div>
+        <div><dt>Part</dt><dd>${escapeHtml(report.metadata.partName || "Unspecified")}</dd></div>
+        <div><dt>Source</dt><dd>${escapeHtml(quoteSourceLabel(report.recommendation.sourceMode))}</dd></div>
+      </dl>
+    </header>
+    <section>
+      <h2>Project Notes</h2>
+      <p>${escapeHtml(notes)}</p>
+    </section>
+    <section>
+      <h2>Quote Summary</h2>
+      <dl class="report-scores">
+        <div><dt>Lot Price</dt><dd>${formatCurrency(report.recommendation.lotPrice)}</dd></div>
+        <div><dt>Unit Price</dt><dd>${formatCurrency(report.recommendation.unitPrice)}</dd></div>
+        <div><dt>Price/kg</dt><dd>${report.recommendation.pricePerKg === null ? "Unavailable" : formatCurrency(report.recommendation.pricePerKg)}</dd></div>
+        <div><dt>Cycles</dt><dd>${report.recommendation.cycleCount ?? "Manual"}</dd></div>
+        <div><dt>Confidence</dt><dd>${escapeHtml(report.recommendation.confidence)}</dd></div>
+      </dl>
+      <p>${escapeHtml(report.recommendation.processSummary)}</p>
+    </section>
+    <section>
+      <h2>Customer Quote Summary</h2>
+      <ul>${customerSummaryLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
+    </section>
+    <section>
+      <h2>Quote Assumptions</h2>
+      <ul>${assumptions.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
+    </section>
+    <section>
+      <h2>Pricing Warnings</h2>
+      <ul>${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+    </section>
+    <section>
+      <h2>Billable Hours</h2>
+      <ul>
+        <li><strong>Furnace:</strong> ${formatNumber(report.recommendation.billableHours.furnace)} h</li>
+        <li><strong>Bath/quench:</strong> ${formatNumber(report.recommendation.billableHours.bathQuench)} h</li>
+        <li><strong>Temper:</strong> ${formatNumber(report.recommendation.billableHours.temper)} h</li>
+        <li><strong>Labor:</strong> ${formatNumber(report.recommendation.billableHours.labor)} h</li>
+      </ul>
+    </section>
+    <section>
+      <h2>Internal Cost Breakdown</h2>
+      <ul>
+        ${quoteCostBreakdownEntries(report.recommendation.breakdown)
+          .map(([label, value]) => `<li><strong>${escapeHtml(label)}:</strong> ${formatCurrency(value)}</li>`)
+          .join("")}
+      </ul>
+    </section>
+    <section>
+      <h2>Internal Notes</h2>
+      <ul>${internalNotes.map((note) => `<li>${escapeHtml(note)}</li>`).join("")}</ul>
+    </section>
+    <section>
+      <h2>Validation Checks</h2>
+      <ul class="report-checklist">
+        ${quoteReportChecklistItems(report)}
+      </ul>
+    </section>
+    <section>
+      <h2>Model Notes</h2>
+      <p>Heat-treatment service pricing only. This quote excludes material, machining, outside services, freight, tax, and contractual terms unless entered separately as manual adjustments.</p>
+    </section>
+  `;
+}
+
+function quoteReportChecklistItems(report: QuoteReportViewModel): string {
+  if (report.validationChecklist.items.length === 0) {
+    return `<li><span>Open</span>No validation checks generated.</li>`;
+  }
+
+  return report.validationChecklist.items.map((item) => `
+    <li>
+      <span>${item.checked ? "Checked" : "Open"}</span>
+      ${escapeHtml(item.label)}
+      ${item.notes.trim() ? `<em>Notes: ${escapeHtml(item.notes.trim())}</em>` : ""}
+    </li>
+  `).join("");
 }
 
 function reportHtml(report: ReportViewModel): string {
@@ -1823,15 +2447,17 @@ function settingsFields(): string {
 }
 
 function syncUnitControls(): void {
-  document.querySelectorAll<HTMLInputElement>('[data-path][type="number"], [data-steel-path][type="number"]').forEach((control) => {
-    const path = control.dataset.path ?? control.dataset.steelPath ?? "";
+  document.querySelectorAll<HTMLInputElement>('[data-path][type="number"], [data-steel-path][type="number"], [data-quote-path][type="number"]').forEach((control) => {
+    const path = control.dataset.path ?? control.dataset.steelPath ?? control.dataset.quotePath ?? "";
     if (!isUnitSensitivePath(path)) {
       return;
     }
 
-    const metricValue = control.dataset.steelPath
-      ? getSteelNumericStateValue(path)
-      : getNumericStateValue(path);
+    const metricValue = control.dataset.quotePath
+      ? getQuoteNumericStateValue(path)
+      : control.dataset.steelPath
+        ? getSteelNumericStateValue(path)
+        : getNumericStateValue(path);
     if (metricValue !== undefined) {
       control.value = formatNumber(toDisplayValue(path, metricValue, unitSystem));
     }
@@ -1887,8 +2513,26 @@ function getSteelNumericStateValue(path: string): number | undefined {
   }
 }
 
+function getQuoteNumericStateValue(path: string): number | undefined {
+  switch (path) {
+    case "lot.pieceWeightKg":
+      return heatTreatQuoteState.lot.pieceWeightKg;
+    case "lot.totalWeightKg":
+      return heatTreatQuoteState.lot.totalWeightKg;
+    case "lot.loadCapacityKg":
+      return heatTreatQuoteState.lot.loadCapacityKg;
+    default:
+      return undefined;
+  }
+}
+
 function formatNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/\.?0+$/, "");
+}
+
+function formatCurrency(value: number): string {
+  const amount = `$${Math.abs(value).toFixed(2)}`;
+  return value < 0 ? `-${amount}` : amount;
 }
 
 function fieldLabel(label: string, helpKey?: string): string {
@@ -1964,6 +2608,38 @@ function steelSelectField(
   `;
 }
 
+function quoteSelectField(
+  path: string,
+  label: string,
+  options: Array<[string, string]>,
+  value: string,
+): string {
+  return `
+    <label class="field">
+      ${fieldLabel(label)}
+      <select data-quote-path="${path}">
+        ${options
+          .map(([optionValue, optionLabel]) => `<option value="${optionValue}" ${optionValue === value ? "selected" : ""}>${optionLabel}</option>`)
+          .join("")}
+      </select>
+    </label>
+  `;
+}
+
+function quoteTextField(
+  path: string,
+  label: string,
+  value: string,
+  readOnly = false,
+): string {
+  return `
+    <label class="field">
+      ${fieldLabel(label)}
+      <input data-quote-path="${path}" type="text" value="${escapeAttribute(value)}" ${readOnly ? "readonly" : ""} />
+    </label>
+  `;
+}
+
 function numberField(
   id: string,
   label: string,
@@ -1982,6 +2658,30 @@ function numberField(
       <div class="unit-input">
         <input data-path="${id}" type="number" value="${formatNumber(displayValue)}" step="${step}"${minAttribute} />
         ${displayUnit ? `<span data-unit-for="${id}">${displayUnit}</span>` : ""}
+      </div>
+    </label>
+  `;
+}
+
+function quoteNumberField(
+  path: string,
+  label: string,
+  value: number | undefined,
+  step: string,
+  unit = "",
+): string {
+  const displayValue = value === undefined || Number.isNaN(value)
+    ? ""
+    : formatNumber(toDisplayValue(path, value, unitSystem));
+  const displayUnit = unitLabelForPath(path, unitSystem, unit);
+  const minAttribute = path === "adjustments.manualAdderDiscount" ? "" : ` min="0"`;
+
+  return `
+    <label class="field">
+      ${fieldLabel(label)}
+      <div class="unit-input">
+        <input data-quote-path="${path}" type="number" value="${displayValue}" step="${step}"${minAttribute} />
+        ${displayUnit ? `<span data-unit-for="${path}">${displayUnit}</span>` : ""}
       </div>
     </label>
   `;

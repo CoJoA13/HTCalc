@@ -1,4 +1,4 @@
-export type ProcessModeId = "adi" | "steel-austempering" | "martempering";
+export type ProcessModeId = "adi" | "steel-austempering" | "martempering" | "heat-treat-rfq";
 export type ProcessModeStatus = "implemented" | "planned";
 
 export interface ProcessMode {
@@ -44,6 +44,14 @@ export const PROCESS_MODES: readonly ProcessMode[] = Object.freeze([
       "Interrupted quench bath temperature",
       "Equalization, final cooling, and tempering plan",
     ],
+  },
+  {
+    id: "heat-treat-rfq",
+    label: "Heat-Treat RFQ",
+    icon: "ph-currency-dollar",
+    status: "implemented",
+    description: "Heat-treatment service quote estimate.",
+    plannedInputs: [],
   },
 ]);
 

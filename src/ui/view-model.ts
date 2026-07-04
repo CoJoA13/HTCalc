@@ -5,6 +5,16 @@ const OPTIONAL_NUMERIC_PATHS = new Set([
   "geometry.estimatedMassKg",
   "microstructure.noduleCountPerMm2",
   "microstructure.nodularityPercent",
+  "lot.pieceWeightKg",
+  "lot.totalWeightKg",
+  "lot.loadCapacityKg",
+  "lot.laborHoursPerLoad",
+  "lot.cycleCountOverride",
+  "manualOverrides.billableFurnaceHours",
+  "manualOverrides.billableBathQuenchHours",
+  "manualOverrides.billableTemperHours",
+  "manualOverrides.billableLaborHours",
+  "manualOverrides.billableCycleCount",
 ]);
 
 function isCompositionPath(path: string): boolean {

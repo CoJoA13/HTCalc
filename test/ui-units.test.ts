@@ -21,6 +21,16 @@ describe("UI unit conversion helpers", () => {
     expect(toMetricValue("geometry.estimatedMassKg", 10, "metric")).toBe(10);
   });
 
+  it("converts quote lot weights with the active unit system", () => {
+    expect(isUnitSensitivePath("lot.pieceWeightKg")).toBe(true);
+    expect(isUnitSensitivePath("lot.totalWeightKg")).toBe(true);
+    expect(isUnitSensitivePath("lot.loadCapacityKg")).toBe(true);
+    expect(toDisplayValue("lot.totalWeightKg", 45.359237, "imperial")).toBeCloseTo(100);
+    expect(toMetricValue("lot.totalWeightKg", 100, "imperial")).toBeCloseTo(45.359237);
+    expect(unitLabelForPath("lot.totalWeightKg", "imperial", "kg")).toBe("lb");
+    expect(unitLabelForPath("lot.totalWeightKg", "metric", "kg")).toBe("kg");
+  });
+
   it("converts bath uniformity as a temperature delta", () => {
     expect(toDisplayValue("equipment.bathUniformityC", 5, "imperial")).toBe(9);
     expect(toMetricValue("equipment.bathUniformityC", 9, "imperial")).toBe(5);

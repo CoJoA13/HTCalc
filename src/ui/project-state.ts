@@ -10,18 +10,30 @@ import {
   type SteelAustemperingInput,
   type SteelBaseInput,
 } from "../steel/index.js";
-import { PROCESS_MODES, type ProcessModeId } from "./process-modes.js";
+import type { HeatTreatQuoteInput } from "../quote/index.js";
+import {
+  PROCESS_MODES,
+  type ProcessModeId,
+} from "./process-modes.js";
+import { defaultHeatTreatQuoteInput } from "./quote-state.js";
 import {
   defaultMartemperingInput,
   defaultSteelAustemperingInput,
 } from "./steel-state.js";
 import type { UnitSystem } from "./units.js";
 
-export const HTCALC_PROJECT_VERSION = 3;
+type Mutable<T> = {
+  -readonly [K in keyof T]: T[K];
+};
+
+export const HTCALC_PROJECT_VERSION = 4;
 const LEGACY_PROJECT_VERSION = 1;
 const REVIEW_PROJECT_VERSION = 2;
+const STEEL_PROJECT_VERSION = 3;
 
-const validProcessModeIds: ReadonlySet<ProcessModeId> = new Set(PROCESS_MODES.map((mode) => mode.id));
+const validProcessModeIds: ReadonlySet<ProcessModeId> = new Set(
+  PROCESS_MODES.map((mode) => mode.id),
+);
 const validUnitSystems: ReadonlySet<UnitSystem> = new Set(["imperial", "metric"]);
 const validGrades: ReadonlySet<AdiProcessInput["target"]["grade"]> = new Set(
   ASTM_A897_GRADES.map((grade) => grade.grade),
@@ -153,6 +165,17 @@ const validEqualizationStrategies: ReadonlySet<MartemperingInput["martemper"]["e
   "surface-equalized",
   "time-limited",
 ]);
+const validQuoteSourceModes: ReadonlySet<HeatTreatQuoteInput["sourceMode"]> = new Set([
+  "adi",
+  "steel-austempering",
+  "martempering",
+  "manual",
+]);
+const validQuoteTimeSources: ReadonlySet<"imported" | "manual" | "calculated"> = new Set([
+  "imported",
+  "manual",
+  "calculated",
+]);
 
 const calibrationKeys = [
   "alloyAustemperabilityScale",
@@ -189,6 +212,7 @@ function emptyValidationChecklists(): Record<ProcessModeId, ValidationChecklistS
     adi: { items: [] },
     "steel-austempering": { items: [] },
     martempering: { items: [] },
+    "heat-treat-rfq": { items: [] },
   };
 }
 
@@ -235,6 +259,9 @@ export interface HtcalcProjectState {
   readonly martempering: {
     readonly input: MartemperingInput;
   };
+  readonly heatTreatQuote: {
+    readonly input: HeatTreatQuoteInput;
+  };
   readonly validationChecklists: ModeValidationChecklists;
   readonly pinnedComparisonBaseline: PinnedComparisonBaseline | null;
 }
@@ -246,6 +273,7 @@ export interface CreateProjectStateInput {
   readonly adiCalibration: AdiModelCalibration;
   readonly steelAustemperingInput?: SteelAustemperingInput;
   readonly martemperingInput?: MartemperingInput;
+  readonly heatTreatQuoteInput?: HeatTreatQuoteInput;
   readonly metadata?: ProjectMetadata;
   readonly validationChecklist?: ValidationChecklistState;
   readonly validationChecklists?: Partial<ModeValidationChecklists>;
@@ -269,6 +297,9 @@ export function createProjectState(input: CreateProjectStateInput): HtcalcProjec
     },
     martempering: {
       input: structuredClone(input.martemperingInput ?? defaultMartemperingInput()),
+    },
+    heatTreatQuote: {
+      input: structuredClone(input.heatTreatQuoteInput ?? defaultHeatTreatQuoteInput()),
     },
     validationChecklists: structuredClone({
       ...emptyValidationChecklists(),
@@ -297,6 +328,7 @@ export function parseProjectState(json: string): HtcalcProjectState {
 
   if (
     parsed.htcalcProjectVersion !== HTCALC_PROJECT_VERSION &&
+    parsed.htcalcProjectVersion !== STEEL_PROJECT_VERSION &&
     parsed.htcalcProjectVersion !== REVIEW_PROJECT_VERSION &&
     parsed.htcalcProjectVersion !== LEGACY_PROJECT_VERSION
   ) {
@@ -316,6 +348,9 @@ export function parseProjectState(json: string): HtcalcProjectState {
       martempering: {
         input: defaultMartemperingInput(),
       },
+      heatTreatQuote: {
+        input: defaultHeatTreatQuoteInput(),
+      },
       validationChecklists: emptyValidationChecklists(),
       pinnedComparisonBaseline: null,
     };
@@ -332,10 +367,28 @@ export function parseProjectState(json: string): HtcalcProjectState {
       martempering: {
         input: defaultMartemperingInput(),
       },
+      heatTreatQuote: {
+        input: defaultHeatTreatQuoteInput(),
+      },
       validationChecklists: {
         ...emptyValidationChecklists(),
         adi: parseValidationChecklist(parsed.validationChecklist, "validationChecklist"),
       },
+      pinnedComparisonBaseline: parsePinnedComparisonBaseline(parsed.pinnedComparisonBaseline),
+    };
+  }
+
+  if (parsed.htcalcProjectVersion === STEEL_PROJECT_VERSION) {
+    return {
+      ...base,
+      htcalcProjectVersion: HTCALC_PROJECT_VERSION,
+      metadata: parseMetadata(parsed.metadata, "metadata"),
+      steelAustempering: parseSteelAustemperingProject(parsed.steelAustempering),
+      martempering: parseMartemperingProject(parsed.martempering),
+      heatTreatQuote: {
+        input: defaultHeatTreatQuoteInput(),
+      },
+      validationChecklists: parseLegacyValidationChecklists(parsed.validationChecklists),
       pinnedComparisonBaseline: parsePinnedComparisonBaseline(parsed.pinnedComparisonBaseline),
     };
   }
@@ -346,6 +399,7 @@ export function parseProjectState(json: string): HtcalcProjectState {
     metadata: parseMetadata(parsed.metadata, "metadata"),
     steelAustempering: parseSteelAustemperingProject(parsed.steelAustempering),
     martempering: parseMartemperingProject(parsed.martempering),
+    heatTreatQuote: parseHeatTreatQuoteProject(parsed.heatTreatQuote),
     validationChecklists: parseValidationChecklists(parsed.validationChecklists),
     pinnedComparisonBaseline: parsePinnedComparisonBaseline(parsed.pinnedComparisonBaseline),
   };
@@ -357,6 +411,7 @@ function parseBaseProject(project: Record<string, unknown>): Omit<
   | "metadata"
   | "steelAustempering"
   | "martempering"
+  | "heatTreatQuote"
   | "validationChecklists"
   | "pinnedComparisonBaseline"
 > {
@@ -401,6 +456,26 @@ function parseValidationChecklists(value: unknown): ModeValidationChecklists {
       "validationChecklists.steel-austempering",
     ),
     martempering: parseValidationChecklist(value.martempering, "validationChecklists.martempering"),
+    "heat-treat-rfq": parseValidationChecklist(
+      value["heat-treat-rfq"],
+      "validationChecklists.heat-treat-rfq",
+    ),
+  };
+}
+
+function parseLegacyValidationChecklists(value: unknown): ModeValidationChecklists {
+  assertRecord(value, "validationChecklists");
+
+  return {
+    adi: parseValidationChecklist(value.adi, "validationChecklists.adi"),
+    "steel-austempering": parseValidationChecklist(
+      value["steel-austempering"],
+      "validationChecklists.steel-austempering",
+    ),
+    martempering: parseValidationChecklist(value.martempering, "validationChecklists.martempering"),
+    "heat-treat-rfq": {
+      items: [],
+    },
   };
 }
 
@@ -465,6 +540,250 @@ function parseMartemperingProject(value: unknown): HtcalcProjectState["martemper
 
   return {
     input: parseMartemperingInput(value.input, "martempering.input"),
+  };
+}
+
+function parseHeatTreatQuoteProject(value: unknown): HtcalcProjectState["heatTreatQuote"] {
+  assertRecord(value, "heatTreatQuote");
+
+  return {
+    input: parseHeatTreatQuoteInput(value.input, "heatTreatQuote.input"),
+  };
+}
+
+function parseHeatTreatQuoteInput(value: unknown, path: string): HeatTreatQuoteInput {
+  assertRecord(value, path);
+  assertRecord(value.lot, `${path}.lot`);
+  assertRecord(value.importedProcess, `${path}.importedProcess`);
+  assertRecord(value.shopRates, `${path}.shopRates`);
+  assertRecord(value.manualOverrides, `${path}.manualOverrides`);
+  assertRecord(value.adjustments, `${path}.adjustments`);
+
+  return {
+    sourceMode: enumValue(value.sourceMode, validQuoteSourceModes, `${path}.sourceMode`),
+    processSummary: stringValue(value.processSummary, `${path}.processSummary`),
+    lot: parseHeatTreatQuoteLot(value.lot, `${path}.lot`),
+    importedProcess: parseImportedProcessAssumptions(
+      value.importedProcess,
+      `${path}.importedProcess`,
+    ),
+    shopRates: parseHeatTreatShopRates(value.shopRates, `${path}.shopRates`),
+    manualOverrides: parseHeatTreatManualOverrides(
+      value.manualOverrides,
+      `${path}.manualOverrides`,
+    ),
+    adjustments: parseHeatTreatQuoteAdjustments(value.adjustments, `${path}.adjustments`),
+  };
+}
+
+function parseHeatTreatQuoteLot(value: unknown, path: string): HeatTreatQuoteInput["lot"] {
+  assertRecord(value, path);
+  const lot: Mutable<HeatTreatQuoteInput["lot"]> = {
+    quantity: finiteNumber(value.quantity, `${path}.quantity`, { minExclusive: 0 }),
+  };
+
+  assignOptionalFiniteNumber(lot, "pieceWeightKg", value.pieceWeightKg, `${path}.pieceWeightKg`, {
+    minExclusive: 0,
+  });
+  assignOptionalFiniteNumber(lot, "totalWeightKg", value.totalWeightKg, `${path}.totalWeightKg`, {
+    minExclusive: 0,
+  });
+  assignOptionalFiniteNumber(lot, "loadCapacityKg", value.loadCapacityKg, `${path}.loadCapacityKg`, {
+    minExclusive: 0,
+  });
+  assignOptionalFiniteNumber(
+    lot,
+    "laborHoursPerLoad",
+    value.laborHoursPerLoad,
+    `${path}.laborHoursPerLoad`,
+    { min: 0 },
+  );
+  assignOptionalFiniteNumber(
+    lot,
+    "cycleCountOverride",
+    value.cycleCountOverride,
+    `${path}.cycleCountOverride`,
+    { minExclusive: 0 },
+  );
+
+  return lot;
+}
+
+function parseImportedProcessAssumptions(
+  value: unknown,
+  path: string,
+): HeatTreatQuoteInput["importedProcess"] {
+  assertRecord(value, path);
+  assertStringArray(value.processWarnings, `${path}.processWarnings`);
+  assertStringArray(value.validationBurdenHints, `${path}.validationBurdenHints`);
+  const importedProcess: Mutable<HeatTreatQuoteInput["importedProcess"]> = {
+    sourceMode: enumValue(value.sourceMode, validQuoteSourceModes, `${path}.sourceMode`),
+    processLabel: stringValue(value.processLabel, `${path}.processLabel`),
+    processConfidence: enumValue(
+      value.processConfidence,
+      validConfidenceLevels,
+      `${path}.processConfidence`,
+    ),
+    processWarnings: value.processWarnings,
+    validationBurdenHints: value.validationBurdenHints,
+    temperCount: finiteNumber(value.temperCount, `${path}.temperCount`, { min: 0 }),
+  };
+
+  if (!Number.isInteger(importedProcess.temperCount)) {
+    throw new Error(`HTCalc project file has invalid value at ${path}.temperCount.`);
+  }
+
+  if (value.austenitizeMinutes !== undefined) {
+    importedProcess.austenitizeMinutes = parseHeatTreatTimeAssumption(
+      value.austenitizeMinutes,
+      `${path}.austenitizeMinutes`,
+    );
+  }
+
+  if (value.bathMinutes !== undefined) {
+    importedProcess.bathMinutes = parseHeatTreatTimeAssumption(
+      value.bathMinutes,
+      `${path}.bathMinutes`,
+    );
+  }
+
+  if (value.temperMinutes !== undefined) {
+    importedProcess.temperMinutes = parseHeatTreatTimeAssumption(
+      value.temperMinutes,
+      `${path}.temperMinutes`,
+    );
+  }
+
+  return importedProcess;
+}
+
+function parseHeatTreatTimeAssumption(
+  value: unknown,
+  path: string,
+): NonNullable<HeatTreatQuoteInput["importedProcess"]["austenitizeMinutes"]> {
+  assertRecord(value, path);
+  const assumption: Mutable<NonNullable<HeatTreatQuoteInput["importedProcess"]["austenitizeMinutes"]>> = {
+    label: stringValue(value.label, `${path}.label`),
+    nominalMin: finiteNumber(value.nominalMin, `${path}.nominalMin`, { min: 0 }),
+    source: enumValue(value.source, validQuoteTimeSources, `${path}.source`),
+  };
+
+  assignOptionalFiniteNumber(assumption, "minMin", value.minMin, `${path}.minMin`, { min: 0 });
+  assignOptionalFiniteNumber(assumption, "maxMin", value.maxMin, `${path}.maxMin`, { min: 0 });
+
+  return assumption;
+}
+
+function parseHeatTreatShopRates(value: unknown, path: string): HeatTreatQuoteInput["shopRates"] {
+  assertRecord(value, path);
+  const targetMarginPercent = finiteNumber(
+    value.targetMarginPercent,
+    `${path}.targetMarginPercent`,
+    { min: 0 },
+  );
+
+  if (targetMarginPercent >= 100) {
+    throw new Error(`HTCalc project file has invalid value at ${path}.targetMarginPercent.`);
+  }
+
+  return {
+    minimumLotCharge: finiteNumber(value.minimumLotCharge, `${path}.minimumLotCharge`, { min: 0 }),
+    setupAdminCharge: finiteNumber(value.setupAdminCharge, `${path}.setupAdminCharge`, { min: 0 }),
+    laborRatePerHour: finiteNumber(value.laborRatePerHour, `${path}.laborRatePerHour`, { min: 0 }),
+    furnaceRatePerHour: finiteNumber(value.furnaceRatePerHour, `${path}.furnaceRatePerHour`, {
+      min: 0,
+    }),
+    bathQuenchRatePerHour: finiteNumber(
+      value.bathQuenchRatePerHour,
+      `${path}.bathQuenchRatePerHour`,
+      { min: 0 },
+    ),
+    temperFurnaceRatePerHour: finiteNumber(
+      value.temperFurnaceRatePerHour,
+      `${path}.temperFurnaceRatePerHour`,
+      { min: 0 },
+    ),
+    inspectionBaseCharge: finiteNumber(value.inspectionBaseCharge, `${path}.inspectionBaseCharge`, {
+      min: 0,
+    }),
+    consumablesPerKg: finiteNumber(value.consumablesPerKg, `${path}.consumablesPerKg`, {
+      min: 0,
+    }),
+    handlingPackagingCharge: finiteNumber(
+      value.handlingPackagingCharge,
+      `${path}.handlingPackagingCharge`,
+      { min: 0 },
+    ),
+    overheadPercent: finiteNumber(value.overheadPercent, `${path}.overheadPercent`, { min: 0 }),
+    targetMarginPercent,
+  };
+}
+
+function parseHeatTreatManualOverrides(
+  value: unknown,
+  path: string,
+): HeatTreatQuoteInput["manualOverrides"] {
+  assertRecord(value, path);
+  const manualOverrides: Mutable<HeatTreatQuoteInput["manualOverrides"]> = {};
+
+  assignOptionalFiniteNumber(
+    manualOverrides,
+    "billableFurnaceHours",
+    value.billableFurnaceHours,
+    `${path}.billableFurnaceHours`,
+    { min: 0 },
+  );
+  assignOptionalFiniteNumber(
+    manualOverrides,
+    "billableBathQuenchHours",
+    value.billableBathQuenchHours,
+    `${path}.billableBathQuenchHours`,
+    { min: 0 },
+  );
+  assignOptionalFiniteNumber(
+    manualOverrides,
+    "billableTemperHours",
+    value.billableTemperHours,
+    `${path}.billableTemperHours`,
+    { min: 0 },
+  );
+  assignOptionalFiniteNumber(
+    manualOverrides,
+    "billableLaborHours",
+    value.billableLaborHours,
+    `${path}.billableLaborHours`,
+    { min: 0 },
+  );
+  assignOptionalFiniteNumber(
+    manualOverrides,
+    "billableCycleCount",
+    value.billableCycleCount,
+    `${path}.billableCycleCount`,
+    { minExclusive: 0 },
+  );
+
+  return manualOverrides;
+}
+
+function parseHeatTreatQuoteAdjustments(
+  value: unknown,
+  path: string,
+): HeatTreatQuoteInput["adjustments"] {
+  assertRecord(value, path);
+
+  return {
+    complexityFactor: finiteNumber(value.complexityFactor, `${path}.complexityFactor`, {
+      minExclusive: 0,
+    }),
+    scrapReworkReservePercent: finiteNumber(
+      value.scrapReworkReservePercent,
+      `${path}.scrapReworkReservePercent`,
+      { min: 0 },
+    ),
+    expediteMultiplier: finiteNumber(value.expediteMultiplier, `${path}.expediteMultiplier`, {
+      minExclusive: 0,
+    }),
+    manualAdderDiscount: finiteNumber(value.manualAdderDiscount, `${path}.manualAdderDiscount`),
   };
 }
 
@@ -1066,4 +1385,18 @@ function finiteNumber(value: unknown, path: string, options: NumberOptions = {})
   }
 
   return value;
+}
+
+function assignOptionalFiniteNumber<T extends object, K extends keyof T>(
+  target: Mutable<T>,
+  key: K,
+  value: unknown,
+  path: string,
+  options: NumberOptions = {},
+): void {
+  if (value === undefined) {
+    return;
+  }
+
+  Object.assign(target, { [key]: finiteNumber(value, path, options) });
 }

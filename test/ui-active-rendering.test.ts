@@ -17,4 +17,64 @@ describe("active process recommendation rendering", () => {
     const unitSystemBody = mainSource.match(/input\[name="unit-system"\][\s\S]*?\n  }\);/)?.[0] ?? "";
     expect(unitSystemBody).toContain("renderActiveRecommendation();");
   });
+
+  it("preserves RFQ quote state through project save and restore shell wiring", () => {
+    expect(mainSource).toContain("let heatTreatQuoteState: HeatTreatQuoteInput = defaultHeatTreatQuoteInput();");
+
+    const saveProjectBody = mainSource.match(/function saveProject[\s\S]*?\n}\n\nfunction restoreProject/)?.[0] ?? "";
+    expect(saveProjectBody).toContain("heatTreatQuoteInput: heatTreatQuoteState");
+
+    const restoreProjectBody = mainSource.match(/function restoreProject[\s\S]*?\n}\n\nfunction replaceAdiInput/)?.[0] ?? "";
+    expect(restoreProjectBody).toContain("heatTreatQuoteState = structuredClone(project.heatTreatQuote.input);");
+  });
+
+  it("wires the heat-treat RFQ mode to the active workspace and report renderer", () => {
+    expect(mainSource).toContain("function quoteWorkspace");
+    expect(mainSource).toContain("function bindQuoteInputs");
+    expect(mainSource).toContain("function renderQuoteRecommendation");
+    expect(mainSource).toContain('case "heat-treat-rfq":');
+    expect(mainSource).toContain("quoteInputForCurrentState()");
+    expect(mainSource).toContain("quoteAssumptionsForSource");
+  });
+
+  it("renders incomplete RFQ pricing basis without using the generic error state", () => {
+    expect(mainSource).toContain("function quoteInputHasPricingBasis");
+    expect(mainSource).toContain("function renderIncompleteQuoteState");
+    expect(mainSource).toContain("Enter lot weight/load capacity or manual billable hours to calculate a quote.");
+
+    const renderQuoteBody = mainSource.match(/function renderQuoteRecommendation[\s\S]*?\n}\n\nfunction quoteInputForCurrentState/)?.[0] ?? "";
+    expect(renderQuoteBody).toContain("if (!quoteInputHasPricingBasis(quoteInput))");
+    expect(renderQuoteBody).toContain("renderIncompleteQuoteState(recommendationPanel);");
+
+    const incompleteStateBody = mainSource.match(/function renderIncompleteQuoteState[\s\S]*?\n}\n\nfunction quoteInputForCurrentState/)?.[0] ?? "";
+    expect(incompleteStateBody).not.toContain("error-state");
+  });
+
+  it("keeps manual RFQ summary and imported source label synchronized", () => {
+    expect(mainSource).toContain("function syncManualQuoteSource");
+
+    const quoteInputBody = mainSource.match(/function quoteInputForCurrentState[\s\S]*?\n}\n\nfunction quoteInputHasPricingBasis/)?.[0] ?? "";
+    expect(quoteInputBody).toContain("return syncManualQuoteSource();");
+
+    const bindQuoteBody = mainSource.match(/function bindQuoteInputs[\s\S]*?\n}\n\nfunction captureManualQuoteSource/)?.[0] ?? "";
+    expect(bindQuoteBody).toContain('path === "processSummary" && heatTreatQuoteState.sourceMode === "manual"');
+    expect(bindQuoteBody).toContain("syncManualQuoteSource();");
+
+    const syncManualBody = mainSource.match(/function syncManualQuoteSource[\s\S]*?\n}\n\nfunction captureManualQuoteSource/)?.[0] ?? "";
+    expect(syncManualBody).toContain("processLabel: processSummary");
+    expect(syncManualBody).toContain('sourceMode: "manual"');
+  });
+
+  it("resets manual RFQ source cache when restoring any project", () => {
+    expect(mainSource).toContain("function resetManualQuoteSourceCache");
+
+    const restoreProjectBody = mainSource.match(/function restoreProject[\s\S]*?\n}\n\nfunction replaceAdiInput/)?.[0] ?? "";
+    expect(restoreProjectBody).toContain("resetManualQuoteSourceCache(project.heatTreatQuote.input);");
+    expect(restoreProjectBody).not.toContain('if (heatTreatQuoteState.sourceMode === "manual")');
+
+    const resetCacheBody = mainSource.match(/function resetManualQuoteSourceCache[\s\S]*?\n}\n\nfunction refreshQuoteSourceSummary/)?.[0] ?? "";
+    expect(resetCacheBody).toContain("defaultHeatTreatQuoteInput()");
+    expect(resetCacheBody).toContain("manualQuoteProcessSummary =");
+    expect(resetCacheBody).toContain("manualQuoteImportedProcess =");
+  });
 });

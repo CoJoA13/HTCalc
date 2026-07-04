@@ -3,6 +3,6 @@
   "compilerOptions": {
     "rootDir": "src"
   },
-  "include": ["src/adi/**/*.ts", "src/steel/**/*.ts"],
+  "include": ["src/adi/**/*.ts", "src/steel/**/*.ts", "src/quote/**/*.ts"],
   "exclude": ["dist", "node_modules"]
 }

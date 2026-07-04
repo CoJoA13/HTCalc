@@ -6,6 +6,7 @@ This directory contains public model notes and internal implementation planning 
 
 - [ADI process model](adi-process-model.md): austempered ductile iron inputs, outputs, formulas, confidence rules, validation requirements, and limitations.
 - [Steel process model](steel-process-model.md): steel austempering and martempering inputs, outputs, confidence rules, validation requirements, and limitations.
+- [Heat-Treat RFQ pricing model](quote-pricing-model.md)
 
 ## Implementation Records
 

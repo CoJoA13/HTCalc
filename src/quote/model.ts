@@ -33,6 +33,12 @@ function assertFinitePositive(value: number, fieldPath: string): void {
   }
 }
 
+function assertIntegerNonNegative(value: number, fieldPath: string): void {
+  if (!Number.isInteger(value) || value < 0) {
+    throw invalidQuoteInput(fieldPath, "be an integer greater than or equal to 0.");
+  }
+}
+
 function assertPercent(value: number, fieldPath: string): void {
   if (!Number.isFinite(value) || value < 0 || value >= 100) {
     throw invalidQuoteInput(fieldPath, "be at least 0 and less than 100.");
@@ -110,7 +116,7 @@ function validateInput(input: HeatTreatQuoteInput): void {
   validateTimeAssumption(input.importedProcess.austenitizeMinutes, "importedProcess.austenitizeMinutes");
   validateTimeAssumption(input.importedProcess.bathMinutes, "importedProcess.bathMinutes");
   validateTimeAssumption(input.importedProcess.temperMinutes, "importedProcess.temperMinutes");
-  assertFiniteNonNegative(input.importedProcess.temperCount, "importedProcess.temperCount");
+  assertIntegerNonNegative(input.importedProcess.temperCount, "importedProcess.temperCount");
 }
 
 function totalWeightKg(input: HeatTreatQuoteInput): number | null {
@@ -131,6 +137,17 @@ function hasManualBillableHours(input: HeatTreatQuoteInput): boolean {
     input.manualOverrides.billableBathQuenchHours !== undefined ||
     input.manualOverrides.billableTemperHours !== undefined ||
     input.manualOverrides.billableLaborHours !== undefined
+  );
+}
+
+function hasImportedTimeAssumptionWithoutManualOverride(input: HeatTreatQuoteInput): boolean {
+  return (
+    (input.importedProcess.austenitizeMinutes !== undefined &&
+      input.manualOverrides.billableFurnaceHours === undefined) ||
+    (input.importedProcess.bathMinutes !== undefined &&
+      input.manualOverrides.billableBathQuenchHours === undefined) ||
+    (input.importedProcess.temperMinutes !== undefined &&
+      input.manualOverrides.billableTemperHours === undefined)
   );
 }
 
@@ -301,6 +318,10 @@ export function recommendHeatTreatQuote(input: HeatTreatQuoteInput): HeatTreatQu
 
   if (cycles === null && !hasManualBillableHours(input)) {
     throw new RangeError("Invalid heat-treat quote input: lot must provide weight/load capacity or manual billable hours.");
+  }
+
+  if (cycles === null && hasImportedTimeAssumptionWithoutManualOverride(input)) {
+    throw new RangeError("Invalid heat-treat quote input: lot must provide cycle basis or manual billable overrides for all imported process time assumptions.");
   }
 
   const hours = billableHours(input, cycles);

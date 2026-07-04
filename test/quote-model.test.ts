@@ -246,6 +246,32 @@ describe("heat-treat quote model", () => {
     ).toThrow("Invalid heat-treat quote input: importedProcess.processConfidence must be one of green, yellow, red.");
   });
 
+  it("rejects imported process times without cycle basis unless the imported buckets are manually overridden", () => {
+    expect(() =>
+      recommendHeatTreatQuote({
+        ...baseInput,
+        lot: {
+          quantity: 12,
+        },
+        manualOverrides: {
+          billableLaborHours: 1,
+        },
+      }),
+    ).toThrow("Invalid heat-treat quote input: lot must provide cycle basis or manual billable overrides for all imported process time assumptions.");
+  });
+
+  it("rejects fractional temper counts", () => {
+    expect(() =>
+      recommendHeatTreatQuote({
+        ...baseInput,
+        importedProcess: {
+          ...baseInput.importedProcess,
+          temperCount: 0.5,
+        },
+      }),
+    ).toThrow("Invalid heat-treat quote input: importedProcess.temperCount must be an integer greater than or equal to 0.");
+  });
+
   it("rejects invalid target margins", () => {
     expect(() =>
       recommendHeatTreatQuote({

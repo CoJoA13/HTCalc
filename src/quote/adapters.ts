@@ -36,7 +36,7 @@ export function quoteAssumptionsFromAdi(
     sourceMode: "adi",
     processLabel: `ADI ${recommendation.expectedGrade}`,
     processConfidence: confidence(recommendation.confidence),
-    processWarnings: recommendation.warnings,
+    processWarnings: [...recommendation.warnings],
     validationBurdenHints: [
       "Review ADI validation checklist and required metallography before quoting.",
       "Include hardness traverse or tensile testing when required by the customer specification.",
@@ -60,7 +60,7 @@ export function quoteAssumptionsFromSteelAustempering(
     sourceMode: "steel-austempering",
     processLabel: `Steel Austempering - ${recommendation.expectedStructure}`,
     processConfidence: confidence(recommendation.confidence),
-    processWarnings: recommendation.warnings,
+    processWarnings: [...recommendation.warnings],
     validationBurdenHints: [
       "Include hardenability review, final hardness traverse, and microstructure validation in quote scope.",
       "Confirm final cooling and handling requirements before sending pricing.",
@@ -84,7 +84,7 @@ export function quoteAssumptionsFromMartempering(
     sourceMode: "martempering",
     processLabel: `Martempering - temper to ${recommendation.temper.targetHardnessHrc} HRC`,
     processConfidence: confidence(recommendation.confidence),
-    processWarnings: recommendation.warnings,
+    processWarnings: [...recommendation.warnings],
     validationBurdenHints: [
       "Include tempering validation and final hardness verification in quote scope.",
       "Confirm retained-austenite, distortion, and prompt-temper risks before sending pricing.",

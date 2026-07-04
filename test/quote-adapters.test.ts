@@ -49,8 +49,23 @@ describe("quote recipe adapters", () => {
 
     expect(assumptions.sourceMode).toBe("adi");
     expect(assumptions.processLabel).toBe(`ADI ${recommendation.expectedGrade}`);
-    expect(assumptions.austenitizeMinutes?.nominalMin).toBe(recommendation.austenitize.soakAfterCoreAtTemp.nominalMin);
-    expect(assumptions.bathMinutes?.nominalMin).toBe(recommendation.austemper.holdAfterCoreAtTemp.nominalMin);
+    expect(assumptions.processConfidence).toBe(recommendation.confidence);
+    expect(assumptions.processWarnings).toEqual(recommendation.warnings);
+    expect(assumptions.processWarnings).not.toBe(recommendation.warnings);
+    expect(assumptions.austenitizeMinutes).toEqual({
+      label: "Austenitize soak after core reaches temperature",
+      minMin: recommendation.austenitize.soakAfterCoreAtTemp.minMin,
+      nominalMin: recommendation.austenitize.soakAfterCoreAtTemp.nominalMin,
+      maxMin: recommendation.austenitize.soakAfterCoreAtTemp.maxMin,
+      source: "imported",
+    });
+    expect(assumptions.bathMinutes).toEqual({
+      label: "Austemper hold after core reaches bath temperature",
+      minMin: recommendation.austemper.holdAfterCoreAtTemp.minMin,
+      nominalMin: recommendation.austemper.holdAfterCoreAtTemp.nominalMin,
+      maxMin: recommendation.austemper.holdAfterCoreAtTemp.maxMin,
+      source: "imported",
+    });
     expect(assumptions.temperCount).toBe(0);
     expect(assumptions.validationBurdenHints).toContain("Review ADI validation checklist and required metallography before quoting.");
   });
@@ -60,10 +75,26 @@ describe("quote recipe adapters", () => {
     const assumptions = quoteAssumptionsFromSteelAustempering(recommendation);
 
     expect(assumptions.sourceMode).toBe("steel-austempering");
-    expect(assumptions.processLabel).toContain("Steel Austempering");
-    expect(assumptions.austenitizeMinutes?.nominalMin).toBe(recommendation.austenitize.soakAfterCoreAtTemp.nominalMin);
-    expect(assumptions.bathMinutes?.nominalMin).toBe(recommendation.austemper.holdAfterCoreAtTemp.nominalMin);
+    expect(assumptions.processLabel).toBe(`Steel Austempering - ${recommendation.expectedStructure}`);
+    expect(assumptions.processWarnings).toEqual(recommendation.warnings);
+    expect(assumptions.processWarnings).not.toBe(recommendation.warnings);
+    expect(assumptions.austenitizeMinutes).toEqual({
+      label: "Austenitize soak after core reaches temperature",
+      minMin: recommendation.austenitize.soakAfterCoreAtTemp.minMin,
+      nominalMin: recommendation.austenitize.soakAfterCoreAtTemp.nominalMin,
+      maxMin: recommendation.austenitize.soakAfterCoreAtTemp.maxMin,
+      source: "imported",
+    });
+    expect(assumptions.bathMinutes).toEqual({
+      label: "Austemper hold after core reaches bath temperature",
+      minMin: recommendation.austemper.holdAfterCoreAtTemp.minMin,
+      nominalMin: recommendation.austemper.holdAfterCoreAtTemp.nominalMin,
+      maxMin: recommendation.austemper.holdAfterCoreAtTemp.maxMin,
+      source: "imported",
+    });
     expect(assumptions.processConfidence).toBe(recommendation.confidence);
+    expect(assumptions.temperCount).toBe(0);
+    expect(assumptions.validationBurdenHints).toContain("Include hardenability review, final hardness traverse, and microstructure validation in quote scope.");
   });
 
   it("imports martempering equalization and temper cycle assumptions", () => {
@@ -71,8 +102,31 @@ describe("quote recipe adapters", () => {
     const assumptions = quoteAssumptionsFromMartempering(recommendation);
 
     expect(assumptions.sourceMode).toBe("martempering");
-    expect(assumptions.bathMinutes?.nominalMin).toBe(recommendation.equalize.nominalMin);
-    expect(assumptions.temperMinutes?.nominalMin).toBe(recommendation.temper.hold.nominalMin);
+    expect(assumptions.processLabel).toBe(`Martempering - temper to ${recommendation.temper.targetHardnessHrc} HRC`);
+    expect(assumptions.processConfidence).toBe(recommendation.confidence);
+    expect(assumptions.processWarnings).toEqual(recommendation.warnings);
+    expect(assumptions.processWarnings).not.toBe(recommendation.warnings);
+    expect(assumptions.austenitizeMinutes).toEqual({
+      label: "Austenitize soak after core reaches temperature",
+      minMin: recommendation.austenitize.soakAfterCoreAtTemp.minMin,
+      nominalMin: recommendation.austenitize.soakAfterCoreAtTemp.nominalMin,
+      maxMin: recommendation.austenitize.soakAfterCoreAtTemp.maxMin,
+      source: "imported",
+    });
+    expect(assumptions.bathMinutes).toEqual({
+      label: "Martemper equalization time",
+      minMin: recommendation.equalize.minMin,
+      nominalMin: recommendation.equalize.nominalMin,
+      maxMin: recommendation.equalize.maxMin,
+      source: "imported",
+    });
+    expect(assumptions.temperMinutes).toEqual({
+      label: "Temper hold time",
+      minMin: recommendation.temper.hold.minMin,
+      nominalMin: recommendation.temper.hold.nominalMin,
+      maxMin: recommendation.temper.hold.maxMin,
+      source: "imported",
+    });
     expect(assumptions.temperCount).toBe(recommendation.temper.temperCount);
     expect(assumptions.validationBurdenHints).toContain("Include tempering validation and final hardness verification in quote scope.");
   });

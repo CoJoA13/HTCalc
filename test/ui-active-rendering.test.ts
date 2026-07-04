@@ -49,4 +49,32 @@ describe("active process recommendation rendering", () => {
     const incompleteStateBody = mainSource.match(/function renderIncompleteQuoteState[\s\S]*?\n}\n\nfunction quoteInputForCurrentState/)?.[0] ?? "";
     expect(incompleteStateBody).not.toContain("error-state");
   });
+
+  it("keeps manual RFQ summary and imported source label synchronized", () => {
+    expect(mainSource).toContain("function syncManualQuoteSource");
+
+    const quoteInputBody = mainSource.match(/function quoteInputForCurrentState[\s\S]*?\n}\n\nfunction quoteInputHasPricingBasis/)?.[0] ?? "";
+    expect(quoteInputBody).toContain("return syncManualQuoteSource();");
+
+    const bindQuoteBody = mainSource.match(/function bindQuoteInputs[\s\S]*?\n}\n\nfunction captureManualQuoteSource/)?.[0] ?? "";
+    expect(bindQuoteBody).toContain('path === "processSummary" && heatTreatQuoteState.sourceMode === "manual"');
+    expect(bindQuoteBody).toContain("syncManualQuoteSource();");
+
+    const syncManualBody = mainSource.match(/function syncManualQuoteSource[\s\S]*?\n}\n\nfunction captureManualQuoteSource/)?.[0] ?? "";
+    expect(syncManualBody).toContain("processLabel: processSummary");
+    expect(syncManualBody).toContain('sourceMode: "manual"');
+  });
+
+  it("resets manual RFQ source cache when restoring any project", () => {
+    expect(mainSource).toContain("function resetManualQuoteSourceCache");
+
+    const restoreProjectBody = mainSource.match(/function restoreProject[\s\S]*?\n}\n\nfunction replaceAdiInput/)?.[0] ?? "";
+    expect(restoreProjectBody).toContain("resetManualQuoteSourceCache(project.heatTreatQuote.input);");
+    expect(restoreProjectBody).not.toContain('if (heatTreatQuoteState.sourceMode === "manual")');
+
+    const resetCacheBody = mainSource.match(/function resetManualQuoteSourceCache[\s\S]*?\n}\n\nfunction refreshQuoteSourceSummary/)?.[0] ?? "";
+    expect(resetCacheBody).toContain("defaultHeatTreatQuoteInput()");
+    expect(resetCacheBody).toContain("manualQuoteProcessSummary =");
+    expect(resetCacheBody).toContain("manualQuoteImportedProcess =");
+  });
 });

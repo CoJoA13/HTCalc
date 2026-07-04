@@ -867,12 +867,29 @@ function bindQuoteInputs(): void {
       }
 
       if (path === "processSummary" && heatTreatQuoteState.sourceMode === "manual") {
-        captureManualQuoteSource();
+        syncManualQuoteSource();
       }
 
       renderQuoteRecommendation();
     });
   });
+}
+
+function syncManualQuoteSource(): HeatTreatQuoteInput {
+  const processSummary = heatTreatQuoteState.processSummary;
+  heatTreatQuoteState = {
+    ...heatTreatQuoteState,
+    sourceMode: "manual",
+    processSummary,
+    importedProcess: {
+      ...heatTreatQuoteState.importedProcess,
+      sourceMode: "manual",
+      processLabel: processSummary,
+    },
+  };
+  captureManualQuoteSource();
+
+  return heatTreatQuoteState;
 }
 
 function captureManualQuoteSource(): void {
@@ -885,6 +902,19 @@ function restoreManualQuoteSource(): void {
     ...heatTreatQuoteState,
     processSummary: manualQuoteProcessSummary,
     importedProcess: structuredClone(manualQuoteImportedProcess),
+  };
+  syncManualQuoteSource();
+}
+
+function resetManualQuoteSourceCache(input: HeatTreatQuoteInput): void {
+  const manualInput = input.sourceMode === "manual"
+    ? input
+    : defaultHeatTreatQuoteInput();
+  manualQuoteProcessSummary = manualInput.processSummary;
+  manualQuoteImportedProcess = {
+    ...structuredClone(manualInput.importedProcess),
+    sourceMode: "manual",
+    processLabel: manualInput.processSummary,
   };
 }
 
@@ -1072,9 +1102,7 @@ function restoreProject(project: HtcalcProjectState): void {
   steelAustemperingState = structuredClone(project.steelAustempering.input);
   martemperingState = structuredClone(project.martempering.input);
   heatTreatQuoteState = structuredClone(project.heatTreatQuote.input);
-  if (heatTreatQuoteState.sourceMode === "manual") {
-    captureManualQuoteSource();
-  }
+  resetManualQuoteSourceCache(project.heatTreatQuote.input);
   pinnedComparisonBaseline = project.pinnedComparisonBaseline
     ? structuredClone(project.pinnedComparisonBaseline)
     : null;
@@ -1584,7 +1612,7 @@ function renderIncompleteQuoteState(recommendationPanel: HTMLDivElement): void {
 
 function quoteInputForCurrentState(): HeatTreatQuoteInput {
   if (heatTreatQuoteState.sourceMode === "manual") {
-    return heatTreatQuoteState;
+    return syncManualQuoteSource();
   }
 
   const importedProcess = quoteAssumptionsForSource(heatTreatQuoteState.sourceMode);

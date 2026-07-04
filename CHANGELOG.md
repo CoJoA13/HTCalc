@@ -4,6 +4,7 @@ All notable project changes are summarized here.
 
 ## Unreleased
 
+- Added Heat-Treat RFQ pricing design and implementation for recipe-imported heat-treatment service estimates.
 - Added public repository documentation, contribution guidance, GitHub issue and PR templates, Dependabot configuration, and MIT licensing.
 
 ## 0.1.0 - 2026-07-03

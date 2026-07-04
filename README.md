@@ -1,6 +1,6 @@
 # HTCalc
 
-HTCalc is a heat-treatment process recommendation workbench for engineering review. It currently covers austempered ductile iron (ADI), steel austempering, and steel martempering planning workflows.
+HTCalc is a heat-treatment process recommendation and RFQ pricing workbench for engineering and estimating review.
 
 The app is a deterministic first-pass calculator. It is not a certification tool, production traveler, or substitute for grade data, CCT/TTT/Jominy data, representative trials, hardness traverse, tensile testing, or metallography.
 
@@ -9,6 +9,7 @@ The app is a deterministic first-pass calculator. It is not a certification tool
 - ADI process window recommendations for ASTM A897 grades.
 - Steel austempering recommendations with austenitize, austemper, hardness, warning, and validation outputs.
 - Steel martempering recommendations with interrupted quench, equalization, as-quenched hardness, tempering, warning, and validation outputs.
+- Heat-treatment service RFQ pricing with recipe imports, shop-specific rates, cost breakdowns, and quote reports.
 - Project save/load using `.htcalc.json`.
 - Project metadata, validation checklists, pinned ADI comparison baselines, printable reports, and Markdown report export.
 - Imperial/metric display toggle for relevant inputs and outputs.

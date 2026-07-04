@@ -347,6 +347,75 @@ describe("project state serialization", () => {
     expect(parsed.heatTreatQuote.input.sourceMode).toBe("manual");
   });
 
+  it("round-trips custom version 4 quote assumptions through JSON", () => {
+    const heatTreatQuoteInput: HeatTreatQuoteInput = {
+      ...defaultHeatTreatQuoteInput(),
+      sourceMode: "martempering",
+      processSummary: "Custom martemper quote",
+      lot: {
+        quantity: 40,
+        pieceWeightKg: 2.5,
+        totalWeightKg: 100,
+        loadCapacityKg: 50,
+        laborHoursPerLoad: 0.75,
+        cycleCountOverride: 3,
+      },
+      importedProcess: {
+        sourceMode: "martempering",
+        processLabel: "Martempering - temper to 44 HRC",
+        processConfidence: "green",
+        processWarnings: ["Review prompt temper timing."],
+        validationBurdenHints: ["Confirm final hardness."],
+        austenitizeMinutes: {
+          label: "Austenitize soak",
+          minMin: 60,
+          nominalMin: 90,
+          maxMin: 120,
+          source: "imported",
+        },
+        bathMinutes: {
+          label: "Equalize",
+          nominalMin: 30,
+          source: "calculated",
+        },
+        temperMinutes: {
+          label: "Temper hold",
+          nominalMin: 120,
+          source: "manual",
+        },
+        temperCount: 2,
+      },
+      shopRates: {
+        ...defaultHeatTreatQuoteInput().shopRates,
+        minimumLotCharge: 650,
+        furnaceRatePerHour: 145,
+        targetMarginPercent: 25,
+      },
+      manualOverrides: {
+        billableFurnaceHours: 5,
+        billableBathQuenchHours: 1.5,
+        billableTemperHours: 4,
+        billableLaborHours: 2,
+        billableCycleCount: 3,
+      },
+      adjustments: {
+        complexityFactor: 1.15,
+        scrapReworkReservePercent: 3,
+        expediteMultiplier: 1.25,
+        manualAdderDiscount: -50,
+      },
+    };
+
+    const parsed = parseProjectState(JSON.stringify(version4Project({
+      activeModeId: rfqModeId,
+      heatTreatQuote: {
+        input: heatTreatQuoteInput,
+      },
+    })));
+
+    expect(parsed.heatTreatQuote.input).toEqual(heatTreatQuoteInput);
+  });
+
   it("migrates version 1 project files to version 4 defaults", () => {
     const parsed = parseProjectState(JSON.stringify({
       htcalcProjectVersion: 1,
@@ -437,6 +506,19 @@ describe("project state serialization", () => {
         },
       }))),
     ).toThrow("HTCalc project file has invalid value at heatTreatQuote.input.shopRates.targetMarginPercent.");
+  });
+
+  it("rejects invalid quote source modes in version 4 project files", () => {
+    expect(() =>
+      parseProjectState(JSON.stringify(version4Project({
+        heatTreatQuote: {
+          input: {
+            ...defaultHeatTreatQuoteInput(),
+            sourceMode: "powder-coating",
+          },
+        },
+      }))),
+    ).toThrow("HTCalc project file has invalid value at heatTreatQuote.input.sourceMode.");
   });
 
   it("rejects unsupported project versions", () => {

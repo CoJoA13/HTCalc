@@ -17,4 +17,14 @@ describe("active process recommendation rendering", () => {
     const unitSystemBody = mainSource.match(/input\[name="unit-system"\][\s\S]*?\n  }\);/)?.[0] ?? "";
     expect(unitSystemBody).toContain("renderActiveRecommendation();");
   });
+
+  it("preserves RFQ quote state through project save and restore shell wiring", () => {
+    expect(mainSource).toContain("let heatTreatQuoteState: HeatTreatQuoteInput = defaultHeatTreatQuoteInput();");
+
+    const saveProjectBody = mainSource.match(/function saveProject[\s\S]*?\n}\n\nfunction restoreProject/)?.[0] ?? "";
+    expect(saveProjectBody).toContain("heatTreatQuoteInput: heatTreatQuoteState");
+
+    const restoreProjectBody = mainSource.match(/function restoreProject[\s\S]*?\n}\n\nfunction replaceAdiInput/)?.[0] ?? "";
+    expect(restoreProjectBody).toContain("heatTreatQuoteState = structuredClone(project.heatTreatQuote.input);");
+  });
 });

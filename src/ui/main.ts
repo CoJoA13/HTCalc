@@ -24,6 +24,7 @@ import {
   type SteelComposition,
   type SteelProcessRecommendation,
 } from "../steel/index.js";
+import type { HeatTreatQuoteInput } from "../quote/index.js";
 import {
   reconcileValidationChecklist,
 } from "./checklist.js";
@@ -48,6 +49,7 @@ import {
   type ProjectMetadata,
   type ValidationChecklistState,
 } from "./project-state.js";
+import { defaultHeatTreatQuoteInput } from "./quote-state.js";
 import {
   createReportViewModel,
   reportMarkdownFilename,
@@ -269,6 +271,7 @@ const state: AdiProcessInput = {
 
 let steelAustemperingState: SteelAustemperingInput = defaultSteelAustemperingInput();
 let martemperingState: MartemperingInput = defaultMartemperingInput();
+let heatTreatQuoteState: HeatTreatQuoteInput = defaultHeatTreatQuoteInput();
 let calibration: AdiModelCalibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
 let unitSystem: UnitSystem = "imperial";
 let activeModeId: ProcessModeId = "adi";
@@ -881,6 +884,7 @@ function saveProject(): void {
     adiCalibration: calibration,
     steelAustemperingInput: steelAustemperingState,
     martemperingInput: martemperingState,
+    heatTreatQuoteInput: heatTreatQuoteState,
     metadata: projectMetadata,
     validationChecklists,
     pinnedComparisonBaseline,
@@ -905,6 +909,7 @@ function restoreProject(project: HtcalcProjectState): void {
   validationChecklists = structuredClone(project.validationChecklists);
   steelAustemperingState = structuredClone(project.steelAustempering.input);
   martemperingState = structuredClone(project.martempering.input);
+  heatTreatQuoteState = structuredClone(project.heatTreatQuote.input);
   pinnedComparisonBaseline = project.pinnedComparisonBaseline
     ? structuredClone(project.pinnedComparisonBaseline)
     : null;

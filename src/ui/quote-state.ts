@@ -1,10 +1,6 @@
 import type {
-  HeatTreatQuoteAdjustments,
   HeatTreatQuoteInput,
-  HeatTreatQuoteLot,
-  HeatTreatManualOverrides,
   HeatTreatQuoteSourceMode,
-  HeatTreatShopRates,
 } from "../quote/index.js";
 
 type Mutable<T> = {
@@ -12,6 +8,13 @@ type Mutable<T> = {
 };
 
 type QuoteValue = string | number | boolean | undefined;
+
+const validSourceModes: ReadonlySet<HeatTreatQuoteSourceMode> = new Set([
+  "adi",
+  "steel-austempering",
+  "martempering",
+  "manual",
+]);
 
 const heatTreatQuoteDefault: HeatTreatQuoteInput = {
   sourceMode: "manual",
@@ -58,51 +61,126 @@ export function setHeatTreatQuoteInputValue(
   path: string,
   value: QuoteValue,
 ): void {
-  const mutableInput = input as Mutable<HeatTreatQuoteInput>;
+  switch (path) {
+    case "sourceMode":
+      assignSourceMode(input, value);
+      return;
+    case "processSummary":
+      (input as Mutable<HeatTreatQuoteInput>).processSummary = String(value ?? "");
+      return;
+    case "lot.quantity":
+      (input.lot as Mutable<HeatTreatQuoteInput["lot"]>).quantity = numericValue(value);
+      return;
+    case "lot.pieceWeightKg":
+      assignOptionalNumber(input.lot as Mutable<HeatTreatQuoteInput["lot"]>, "pieceWeightKg", value);
+      return;
+    case "lot.totalWeightKg":
+      assignOptionalNumber(input.lot as Mutable<HeatTreatQuoteInput["lot"]>, "totalWeightKg", value);
+      return;
+    case "lot.loadCapacityKg":
+      assignOptionalNumber(input.lot as Mutable<HeatTreatQuoteInput["lot"]>, "loadCapacityKg", value);
+      return;
+    case "lot.laborHoursPerLoad":
+      assignOptionalNumber(input.lot as Mutable<HeatTreatQuoteInput["lot"]>, "laborHoursPerLoad", value);
+      return;
+    case "lot.cycleCountOverride":
+      assignOptionalNumber(input.lot as Mutable<HeatTreatQuoteInput["lot"]>, "cycleCountOverride", value);
+      return;
+    case "shopRates.minimumLotCharge":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).minimumLotCharge = numericValue(value);
+      return;
+    case "shopRates.setupAdminCharge":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).setupAdminCharge = numericValue(value);
+      return;
+    case "shopRates.laborRatePerHour":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).laborRatePerHour = numericValue(value);
+      return;
+    case "shopRates.furnaceRatePerHour":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).furnaceRatePerHour = numericValue(value);
+      return;
+    case "shopRates.bathQuenchRatePerHour":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).bathQuenchRatePerHour = numericValue(value);
+      return;
+    case "shopRates.temperFurnaceRatePerHour":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).temperFurnaceRatePerHour = numericValue(value);
+      return;
+    case "shopRates.inspectionBaseCharge":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).inspectionBaseCharge = numericValue(value);
+      return;
+    case "shopRates.consumablesPerKg":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).consumablesPerKg = numericValue(value);
+      return;
+    case "shopRates.handlingPackagingCharge":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).handlingPackagingCharge = numericValue(value);
+      return;
+    case "shopRates.overheadPercent":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).overheadPercent = numericValue(value);
+      return;
+    case "shopRates.targetMarginPercent":
+      (input.shopRates as Mutable<HeatTreatQuoteInput["shopRates"]>).targetMarginPercent = numericValue(value);
+      return;
+    case "manualOverrides.billableFurnaceHours":
+      assignOptionalNumber(
+        input.manualOverrides as Mutable<HeatTreatQuoteInput["manualOverrides"]>,
+        "billableFurnaceHours",
+        value,
+      );
+      return;
+    case "manualOverrides.billableBathQuenchHours":
+      assignOptionalNumber(
+        input.manualOverrides as Mutable<HeatTreatQuoteInput["manualOverrides"]>,
+        "billableBathQuenchHours",
+        value,
+      );
+      return;
+    case "manualOverrides.billableTemperHours":
+      assignOptionalNumber(
+        input.manualOverrides as Mutable<HeatTreatQuoteInput["manualOverrides"]>,
+        "billableTemperHours",
+        value,
+      );
+      return;
+    case "manualOverrides.billableLaborHours":
+      assignOptionalNumber(
+        input.manualOverrides as Mutable<HeatTreatQuoteInput["manualOverrides"]>,
+        "billableLaborHours",
+        value,
+      );
+      return;
+    case "manualOverrides.billableCycleCount":
+      assignOptionalNumber(
+        input.manualOverrides as Mutable<HeatTreatQuoteInput["manualOverrides"]>,
+        "billableCycleCount",
+        value,
+      );
+      return;
+    case "adjustments.complexityFactor":
+      (input.adjustments as Mutable<HeatTreatQuoteInput["adjustments"]>).complexityFactor = numericValue(value);
+      return;
+    case "adjustments.scrapReworkReservePercent":
+      (input.adjustments as Mutable<HeatTreatQuoteInput["adjustments"]>).scrapReworkReservePercent = numericValue(value);
+      return;
+    case "adjustments.expediteMultiplier":
+      (input.adjustments as Mutable<HeatTreatQuoteInput["adjustments"]>).expediteMultiplier = numericValue(value);
+      return;
+    case "adjustments.manualAdderDiscount":
+      (input.adjustments as Mutable<HeatTreatQuoteInput["adjustments"]>).manualAdderDiscount = numericValue(value);
+      return;
+    default:
+      throw new RangeError(`Unknown heat-treat quote input path: ${path}`);
+  }
+}
 
-  if (path === "sourceMode") {
-    mutableInput.sourceMode = value as HeatTreatQuoteSourceMode;
-    return;
+function assignSourceMode(input: HeatTreatQuoteInput, value: QuoteValue): void {
+  if (!isHeatTreatQuoteSourceMode(value)) {
+    throw new RangeError(`Unknown heat-treat quote source mode: ${String(value)}`);
   }
 
-  if (path === "processSummary") {
-    mutableInput.processSummary = String(value ?? "");
-    return;
-  }
+  (input as Mutable<HeatTreatQuoteInput>).sourceMode = value;
+}
 
-  const [group, key] = path.split(".") as [string, string];
-
-  if (group === "lot") {
-    const lot = input.lot as Mutable<HeatTreatQuoteLot>;
-    if (key === "quantity") {
-      lot.quantity = numericValue(value);
-    } else {
-      assignOptionalNumber(lot, key as keyof HeatTreatQuoteLot, value);
-    }
-    return;
-  }
-
-  if (group === "shopRates") {
-    Object.assign(input.shopRates, {
-      [key as keyof HeatTreatShopRates]: numericValue(value),
-    });
-    return;
-  }
-
-  if (group === "manualOverrides") {
-    assignOptionalNumber(
-      input.manualOverrides as Mutable<HeatTreatManualOverrides>,
-      key as keyof HeatTreatManualOverrides,
-      value,
-    );
-    return;
-  }
-
-  if (group === "adjustments") {
-    Object.assign(input.adjustments, {
-      [key as keyof HeatTreatQuoteAdjustments]: numericValue(value),
-    });
-  }
+function isHeatTreatQuoteSourceMode(value: QuoteValue): value is HeatTreatQuoteSourceMode {
+  return typeof value === "string" && validSourceModes.has(value as HeatTreatQuoteSourceMode);
 }
 
 function assignOptionalNumber<T extends object, K extends keyof T>(

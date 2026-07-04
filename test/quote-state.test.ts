@@ -41,4 +41,30 @@ describe("quote UI state", () => {
 
     expect(input.lot.totalWeightKg).toBeUndefined();
   });
+
+  it("clears optional numeric fields when the UI sends an empty string", () => {
+    const input = defaultHeatTreatQuoteInput();
+
+    setHeatTreatQuoteInputValue(input, "manualOverrides.billableFurnaceHours", 6.5);
+    setHeatTreatQuoteInputValue(input, "manualOverrides.billableFurnaceHours", "");
+
+    expect(input.manualOverrides.billableFurnaceHours).toBeUndefined();
+  });
+
+  it("rejects invalid source modes", () => {
+    const input = defaultHeatTreatQuoteInput();
+
+    expect(() =>
+      setHeatTreatQuoteInputValue(input, "sourceMode", "powder-coating"),
+    ).toThrow("Unknown heat-treat quote source mode: powder-coating");
+    expect(input.sourceMode).toBe("manual");
+  });
+
+  it("rejects unknown quote paths", () => {
+    const input = defaultHeatTreatQuoteInput();
+
+    expect(() =>
+      setHeatTreatQuoteInputValue(input, "lot.typoWeightKg", 1200),
+    ).toThrow("Unknown heat-treat quote input path: lot.typoWeightKg");
+  });
 });

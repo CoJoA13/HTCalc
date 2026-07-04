@@ -12,6 +12,7 @@ describe("process mode metadata", () => {
       "adi",
       "steel-austempering",
       "martempering",
+      "heat-treat-rfq",
     ]);
   });
 
@@ -19,6 +20,11 @@ describe("process mode metadata", () => {
     expect(getProcessMode("adi").status).toBe("implemented");
     expect(getProcessMode("steel-austempering").status).toBe("implemented");
     expect(getProcessMode("martempering").status).toBe("implemented");
+    expect(getProcessMode("heat-treat-rfq")).toMatchObject({
+      label: "Heat-Treat RFQ",
+      status: "implemented",
+      description: "Heat-treatment service quote estimate.",
+    });
   });
 
   it("exposes all implemented process modes", () => {
@@ -26,6 +32,7 @@ describe("process mode metadata", () => {
       "adi",
       "steel-austempering",
       "martempering",
+      "heat-treat-rfq",
     ]);
     expect(plannedProcessModes()).toEqual([]);
   });

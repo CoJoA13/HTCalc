@@ -3,6 +3,7 @@ import {
   DEFAULT_ADI_MODEL_CALIBRATION,
   recommendAdiProcess,
 } from "../src/adi/index.js";
+import type { HeatTreatQuoteInput } from "../src/quote/index.js";
 import type {
   MartemperingInput,
   SteelAustemperingInput,
@@ -12,6 +13,7 @@ import {
   parseProjectState,
   serializeProjectState,
 } from "../src/ui/project-state.js";
+import { defaultHeatTreatQuoteInput } from "../src/ui/quote-state.js";
 
 const adiInput = {
   composition: {
@@ -164,6 +166,9 @@ const validationChecklists = {
   martempering: {
     items: [],
   },
+  "heat-treat-rfq": {
+    items: [],
+  },
 };
 
 const pinnedComparisonBaseline = {
@@ -197,8 +202,25 @@ function version3Project(overrides: Record<string, unknown> = {}): Record<string
   };
 }
 
+function version4Project(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ...version3Project(),
+    htcalcProjectVersion: 4,
+    heatTreatQuote: {
+      input: defaultHeatTreatQuoteInput(),
+    },
+    validationChecklists: {
+      ...validationChecklists,
+      "heat-treat-rfq": {
+        items: [],
+      },
+    },
+    ...overrides,
+  };
+}
+
 describe("project state serialization", () => {
-  it("creates a version 3 project state snapshot with steel and review state", () => {
+  it("creates a version 4 project state snapshot with steel and review state", () => {
     const project = createProjectState({
       activeModeId: "martempering",
       unitSystem: "imperial",
@@ -213,7 +235,7 @@ describe("project state serialization", () => {
     });
 
     expect(project).toMatchObject({
-      htcalcProjectVersion: 3,
+      htcalcProjectVersion: 4,
       activeModeId: "martempering",
       unitSystem: "imperial",
       exportedAt: "2026-07-03T00:00:00.000Z",
@@ -229,8 +251,45 @@ describe("project state serialization", () => {
         input: martemperingInput,
       },
       validationChecklists,
+      heatTreatQuote: {
+        input: defaultHeatTreatQuoteInput(),
+      },
       pinnedComparisonBaseline,
     });
+  });
+
+  it("creates a version 4 project state snapshot with RFQ state", () => {
+    const heatTreatQuoteInput: HeatTreatQuoteInput = {
+      ...defaultHeatTreatQuoteInput(),
+      sourceMode: "adi",
+      lot: {
+        ...defaultHeatTreatQuoteInput().lot,
+        quantity: 50,
+      },
+      shopRates: {
+        ...defaultHeatTreatQuoteInput().shopRates,
+        minimumLotCharge: 600,
+      },
+    };
+
+    const project = createProjectState({
+      activeModeId: "heat-treat-rfq",
+      unitSystem: "imperial",
+      adiInput,
+      adiCalibration: DEFAULT_ADI_MODEL_CALIBRATION,
+      steelAustemperingInput,
+      martemperingInput,
+      metadata,
+      validationChecklists,
+      heatTreatQuoteInput,
+      exportedAt: "2026-07-03T00:00:00.000Z",
+    });
+
+    expect(project.htcalcProjectVersion).toBe(4);
+    expect(project.activeModeId).toBe("heat-treat-rfq");
+    expect(project.heatTreatQuote.input.sourceMode).toBe("adi");
+    expect(project.heatTreatQuote.input.lot.quantity).toBe(50);
+    expect(project.heatTreatQuote.input.shopRates.minimumLotCharge).toBe(600);
   });
 
   it("round-trips project state through formatted JSON", () => {
@@ -271,9 +330,21 @@ describe("project state serialization", () => {
     expect(parsed.steelAustempering.input.composition.C).toBeGreaterThan(0);
     expect(parsed.martempering.input.martemper.temperHoldMin).toBeGreaterThan(0);
     expect(parsed.validationChecklists.adi.items).toEqual([]);
+    expect(parsed.validationChecklists["heat-treat-rfq"]!.items).toEqual([]);
+    expect(parsed.heatTreatQuote.input).toEqual(defaultHeatTreatQuoteInput());
   });
 
-  it("migrates version 1 project files to version 3 defaults", () => {
+  it("round-trips version 4 quote state through JSON", () => {
+    const parsed = parseProjectState(JSON.stringify(version4Project({
+      activeModeId: "heat-treat-rfq",
+    })));
+
+    expect(parsed.htcalcProjectVersion).toBe(4);
+    expect(parsed.activeModeId).toBe("heat-treat-rfq");
+    expect(parsed.heatTreatQuote.input.sourceMode).toBe("manual");
+  });
+
+  it("migrates version 1 project files to version 4 defaults", () => {
     const parsed = parseProjectState(JSON.stringify({
       htcalcProjectVersion: 1,
       activeModeId: "adi",
@@ -286,7 +357,7 @@ describe("project state serialization", () => {
     }));
 
     expect(parsed).toMatchObject({
-      htcalcProjectVersion: 3,
+      htcalcProjectVersion: 4,
       metadata: {
         customerName: "",
         partName: "",
@@ -302,6 +373,12 @@ describe("project state serialization", () => {
         martempering: {
           items: [],
         },
+        "heat-treat-rfq": {
+          items: [],
+        },
+      },
+      heatTreatQuote: {
+        input: defaultHeatTreatQuoteInput(),
       },
       pinnedComparisonBaseline: null,
     });
@@ -309,7 +386,7 @@ describe("project state serialization", () => {
     expect(parsed.martempering.input.martemper.temperCount).toBe(1);
   });
 
-  it("migrates version 2 project files to version 3 while preserving ADI review state", () => {
+  it("migrates version 2 project files to version 4 while preserving ADI review state", () => {
     const parsed = parseProjectState(JSON.stringify({
       htcalcProjectVersion: 2,
       activeModeId: "adi",
@@ -324,11 +401,39 @@ describe("project state serialization", () => {
       pinnedComparisonBaseline,
     }));
 
-    expect(parsed.htcalcProjectVersion).toBe(3);
+    expect(parsed.htcalcProjectVersion).toBe(4);
     expect(parsed.metadata).toEqual(metadata);
     expect(parsed.validationChecklists.adi).toEqual(validationChecklist);
     expect(parsed.validationChecklists["steel-austempering"].items).toEqual([]);
+    expect(parsed.validationChecklists["heat-treat-rfq"]!.items).toEqual([]);
+    expect(parsed.heatTreatQuote.input).toEqual(defaultHeatTreatQuoteInput());
     expect(parsed.pinnedComparisonBaseline).toEqual(pinnedComparisonBaseline);
+  });
+
+  it("migrates version 3 project files to version 4 with default RFQ state", () => {
+    const parsed = parseProjectState(JSON.stringify(version3Project()));
+
+    expect(parsed.htcalcProjectVersion).toBe(4);
+    expect(parsed.steelAustempering.input).toEqual(steelAustemperingInput);
+    expect(parsed.martempering.input).toEqual(martemperingInput);
+    expect(parsed.heatTreatQuote.input).toEqual(defaultHeatTreatQuoteInput());
+    expect(parsed.validationChecklists["heat-treat-rfq"]).toEqual({ items: [] });
+  });
+
+  it("rejects invalid quote margin in version 4 project files", () => {
+    expect(() =>
+      parseProjectState(JSON.stringify(version4Project({
+        heatTreatQuote: {
+          input: {
+            ...defaultHeatTreatQuoteInput(),
+            shopRates: {
+              ...defaultHeatTreatQuoteInput().shopRates,
+              targetMarginPercent: 100,
+            },
+          },
+        },
+      }))),
+    ).toThrow("HTCalc project file has invalid value at heatTreatQuote.input.shopRates.targetMarginPercent.");
   });
 
   it("rejects unsupported project versions", () => {

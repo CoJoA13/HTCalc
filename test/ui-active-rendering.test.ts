@@ -36,4 +36,17 @@ describe("active process recommendation rendering", () => {
     expect(mainSource).toContain("quoteInputForCurrentState()");
     expect(mainSource).toContain("quoteAssumptionsForSource");
   });
+
+  it("renders incomplete RFQ pricing basis without using the generic error state", () => {
+    expect(mainSource).toContain("function quoteInputHasPricingBasis");
+    expect(mainSource).toContain("function renderIncompleteQuoteState");
+    expect(mainSource).toContain("Enter lot weight/load capacity or manual billable hours to calculate a quote.");
+
+    const renderQuoteBody = mainSource.match(/function renderQuoteRecommendation[\s\S]*?\n}\n\nfunction quoteInputForCurrentState/)?.[0] ?? "";
+    expect(renderQuoteBody).toContain("if (!quoteInputHasPricingBasis(quoteInput))");
+    expect(renderQuoteBody).toContain("renderIncompleteQuoteState(recommendationPanel);");
+
+    const incompleteStateBody = mainSource.match(/function renderIncompleteQuoteState[\s\S]*?\n}\n\nfunction quoteInputForCurrentState/)?.[0] ?? "";
+    expect(incompleteStateBody).not.toContain("error-state");
+  });
 });

@@ -5,6 +5,7 @@ import {
   quoteReportMarkdownFilename,
   serializeQuoteReportMarkdown,
 } from "../src/ui/quote-report.js";
+import type { ValidationChecklistState } from "../src/ui/project-state.js";
 
 const shopRates: HeatTreatQuoteInput["shopRates"] = {
   minimumLotCharge: 500,
@@ -91,6 +92,7 @@ describe("quote report markdown", () => {
       },
       input,
       recommendation,
+      validationChecklist: checklistFromRecommendation(recommendation),
     });
 
     const markdown = serializeQuoteReportMarkdown(report);
@@ -149,8 +151,8 @@ describe("quote report markdown", () => {
       expect(markdown).toContain(`- ${note}`);
     }
 
-    for (const check of recommendation.validationChecks) {
-      expect(markdown).toContain(`- ${check}`);
+    for (const item of checklistFromRecommendation(recommendation).items) {
+      expect(markdown).toContain(`- Open: ${item.label}`);
     }
 
     for (const bucketLabel of [
@@ -188,6 +190,7 @@ describe("quote report markdown", () => {
       },
       input: manualQuoteInput,
       recommendation,
+      validationChecklist: checklistFromRecommendation(recommendation),
     });
 
     const markdown = serializeQuoteReportMarkdown(report);
@@ -204,6 +207,43 @@ describe("quote report markdown", () => {
     expect(markdown).toContain("- Manual quote source selected; imported process assumptions are not linked to a recipe.");
   });
 
+  it("serializes checked RFQ validation checklist state and notes", () => {
+    const recommendation = recommendHeatTreatQuote(input);
+    const report = createQuoteReportViewModel({
+      exportedAt: "2026-07-04T00:00:00.000Z",
+      metadata: {
+        customerName: "ACME Castings",
+        partName: "Pump bracket",
+        notes: "",
+      },
+      input,
+      recommendation,
+      validationChecklist: {
+        items: [
+          {
+            id: "confirm-rates",
+            label: "Confirm shop rates, burden, and margin are current.",
+            checked: true,
+            notes: "Rates approved by sales.",
+          },
+          {
+            id: "confirm-packaging",
+            label: "Confirm inspection, certification, packaging, and expedite scope.",
+            checked: false,
+            notes: "",
+          },
+        ],
+      },
+    });
+
+    const markdown = serializeQuoteReportMarkdown(report);
+
+    expect(markdown).toContain("- Checked: Confirm shop rates, burden, and margin are current.");
+    expect(markdown).toContain("  Notes: Rates approved by sales.");
+    expect(markdown).toContain("- Open: Confirm inspection, certification, packaging, and expedite scope.");
+    expect(markdown).not.toContain("- Confirm shop rates, burden, and margin are current.");
+  });
+
   it("builds RFQ markdown filenames from metadata", () => {
     expect(quoteReportMarkdownFilename(
       { customerName: "ACME Castings", partName: "Pump Bracket", notes: "" },
@@ -214,4 +254,17 @@ describe("quote report markdown", () => {
 
 function formatExpectedNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/\.?0+$/, "");
+}
+
+function checklistFromRecommendation(
+  recommendation: ReturnType<typeof recommendHeatTreatQuote>,
+): ValidationChecklistState {
+  return {
+    items: recommendation.validationChecks.map((label, index) => ({
+      id: `quote-check-${index}`,
+      label,
+      checked: false,
+      notes: "",
+    })),
+  };
 }

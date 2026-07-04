@@ -1487,6 +1487,11 @@ function renderQuoteRecommendation(): void {
 
   try {
     const quoteInput = quoteInputForCurrentState();
+    if (!quoteInputHasPricingBasis(quoteInput)) {
+      renderIncompleteQuoteState(recommendationPanel);
+      return;
+    }
+
     const result = recommendHeatTreatQuote(quoteInput);
     setValidationChecklist(
       "heat-treat-rfq",
@@ -1568,6 +1573,15 @@ function renderQuoteRecommendation(): void {
   }
 }
 
+function renderIncompleteQuoteState(recommendationPanel: HTMLDivElement): void {
+  recommendationPanel.innerHTML = `
+    <div class="result-section">
+      <div class="result-title"><i class="ph ph-calculator"></i> Pricing Basis Needed</div>
+      <p>Enter lot weight/load capacity or manual billable hours to calculate a quote.</p>
+    </div>
+  `;
+}
+
 function quoteInputForCurrentState(): HeatTreatQuoteInput {
   if (heatTreatQuoteState.sourceMode === "manual") {
     return heatTreatQuoteState;
@@ -1582,6 +1596,45 @@ function quoteInputForCurrentState(): HeatTreatQuoteInput {
   heatTreatQuoteState = input;
 
   return input;
+}
+
+function quoteInputHasPricingBasis(input: HeatTreatQuoteInput): boolean {
+  const hasTotalWeight = input.lot.totalWeightKg !== undefined || input.lot.pieceWeightKg !== undefined;
+  const hasCycleBasis = (
+    input.manualOverrides.billableCycleCount !== undefined ||
+    input.lot.cycleCountOverride !== undefined ||
+    (hasTotalWeight && input.lot.loadCapacityKg !== undefined)
+  );
+
+  if (hasCycleBasis) {
+    return true;
+  }
+
+  if (!quoteInputHasManualBillableHours(input)) {
+    return false;
+  }
+
+  return !quoteInputHasImportedTimeWithoutManualOverride(input);
+}
+
+function quoteInputHasManualBillableHours(input: HeatTreatQuoteInput): boolean {
+  return (
+    input.manualOverrides.billableFurnaceHours !== undefined ||
+    input.manualOverrides.billableBathQuenchHours !== undefined ||
+    input.manualOverrides.billableTemperHours !== undefined ||
+    input.manualOverrides.billableLaborHours !== undefined
+  );
+}
+
+function quoteInputHasImportedTimeWithoutManualOverride(input: HeatTreatQuoteInput): boolean {
+  return (
+    (input.importedProcess.austenitizeMinutes !== undefined &&
+      input.manualOverrides.billableFurnaceHours === undefined) ||
+    (input.importedProcess.bathMinutes !== undefined &&
+      input.manualOverrides.billableBathQuenchHours === undefined) ||
+    (input.importedProcess.temperMinutes !== undefined &&
+      input.manualOverrides.billableTemperHours === undefined)
+  );
 }
 
 function quoteAssumptionsForSource(sourceMode: HeatTreatQuoteSourceMode): ImportedProcessAssumptions {
@@ -1943,6 +1996,7 @@ function currentQuoteReportViewModel(result?: HeatTreatQuoteRecommendation): Quo
     metadata: projectMetadata,
     input,
     recommendation,
+    validationChecklist: validationChecklists["heat-treat-rfq"],
   });
 }
 
@@ -2079,9 +2133,6 @@ function quoteReportHtml(report: QuoteReportViewModel): string {
   const internalNotes = report.recommendation.internalNotes.length > 0
     ? report.recommendation.internalNotes
     : ["No internal quote notes generated."];
-  const validationChecks = report.recommendation.validationChecks.length > 0
-    ? report.recommendation.validationChecks
-    : ["No validation checks generated."];
 
   return `
     <header class="report-document-header">
@@ -2144,7 +2195,7 @@ function quoteReportHtml(report: QuoteReportViewModel): string {
     <section>
       <h2>Validation Checks</h2>
       <ul class="report-checklist">
-        ${validationChecks.map((check) => `<li><span>Open</span>${escapeHtml(check)}</li>`).join("")}
+        ${quoteReportChecklistItems(report)}
       </ul>
     </section>
     <section>
@@ -2152,6 +2203,20 @@ function quoteReportHtml(report: QuoteReportViewModel): string {
       <p>Heat-treatment service pricing only. This quote excludes material, machining, outside services, freight, tax, and contractual terms unless entered separately as manual adjustments.</p>
     </section>
   `;
+}
+
+function quoteReportChecklistItems(report: QuoteReportViewModel): string {
+  if (report.validationChecklist.items.length === 0) {
+    return `<li><span>Open</span>No validation checks generated.</li>`;
+  }
+
+  return report.validationChecklist.items.map((item) => `
+    <li>
+      <span>${item.checked ? "Checked" : "Open"}</span>
+      ${escapeHtml(item.label)}
+      ${item.notes.trim() ? `<em>Notes: ${escapeHtml(item.notes.trim())}</em>` : ""}
+    </li>
+  `).join("");
 }
 
 function reportHtml(report: ReportViewModel): string {

@@ -2,13 +2,17 @@ import type {
   HeatTreatQuoteInput,
   HeatTreatQuoteRecommendation,
 } from "../quote/index.js";
-import type { ProjectMetadata } from "./project-state.js";
+import type {
+  ProjectMetadata,
+  ValidationChecklistState,
+} from "./project-state.js";
 
 export interface CreateQuoteReportViewModelInput {
   readonly exportedAt: string;
   readonly metadata: ProjectMetadata;
   readonly input: HeatTreatQuoteInput;
   readonly recommendation: HeatTreatQuoteRecommendation;
+  readonly validationChecklist: ValidationChecklistState;
 }
 
 export interface QuoteReportViewModel extends CreateQuoteReportViewModelInput {
@@ -38,8 +42,11 @@ export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): stri
   const internalNoteLines = report.recommendation.internalNotes.length > 0
     ? report.recommendation.internalNotes.map((note) => `- ${note}`)
     : ["- No internal quote notes generated."];
-  const validationCheckLines = report.recommendation.validationChecks.length > 0
-    ? report.recommendation.validationChecks.map((check) => `- ${check}`)
+  const validationCheckLines = report.validationChecklist.items.length > 0
+    ? report.validationChecklist.items.flatMap((item) => [
+      `- ${item.checked ? "Checked" : "Open"}: ${item.label}`,
+      ...(item.notes.trim() ? [`  Notes: ${item.notes.trim()}`] : []),
+    ])
     : ["- No validation checks generated."];
 
   return [

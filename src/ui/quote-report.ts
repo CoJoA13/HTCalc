@@ -32,6 +32,15 @@ export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): stri
   const assumptionLines = report.recommendation.importedAssumptions.length > 0
     ? report.recommendation.importedAssumptions.map((assumption) => `- ${assumption}`)
     : ["- No imported assumptions."];
+  const customerSummaryLines = report.recommendation.customerSummaryLines.length > 0
+    ? report.recommendation.customerSummaryLines.map((line) => `- ${line}`)
+    : ["- No customer quote summary lines generated."];
+  const internalNoteLines = report.recommendation.internalNotes.length > 0
+    ? report.recommendation.internalNotes.map((note) => `- ${note}`)
+    : ["- No internal quote notes generated."];
+  const validationCheckLines = report.recommendation.validationChecks.length > 0
+    ? report.recommendation.validationChecks.map((check) => `- ${check}`)
+    : ["- No validation checks generated."];
 
   return [
     `# ${report.title}`,
@@ -47,13 +56,17 @@ export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): stri
     "",
     "## Quote Summary",
     `Process source: ${report.recommendation.processSummary}`,
+    `Source mode: ${report.recommendation.sourceMode}`,
     `Quantity: ${formatNumber(report.input.lot.quantity)}`,
     `Total weight: ${report.recommendation.totalWeightKg === null ? "Unavailable" : `${formatNumber(report.recommendation.totalWeightKg)} kg`}`,
     `Cycle count: ${report.recommendation.cycleCount ?? "Manual"}`,
-    `Lot price: $${report.recommendation.lotPrice.toFixed(2)}`,
-    `Unit price: $${report.recommendation.unitPrice.toFixed(2)}`,
-    `Price per kg: ${report.recommendation.pricePerKg === null ? "Unavailable" : `$${report.recommendation.pricePerKg.toFixed(2)}`}`,
+    `Lot price: ${formatMoney(report.recommendation.lotPrice)}`,
+    `Unit price: ${formatMoney(report.recommendation.unitPrice)}`,
+    `Price per kg: ${report.recommendation.pricePerKg === null ? "Unavailable" : formatMoney(report.recommendation.pricePerKg)}`,
     `Confidence: ${report.recommendation.confidence}`,
+    "",
+    "## Customer Quote Summary",
+    ...customerSummaryLines,
     "",
     "## Quote Assumptions",
     ...assumptionLines,
@@ -61,22 +74,34 @@ export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): stri
     "## Pricing Warnings",
     ...warningLines,
     "",
+    "## Billable Hours",
+    `- Furnace: ${formatNumber(report.recommendation.billableHours.furnace)} h`,
+    `- Bath/quench: ${formatNumber(report.recommendation.billableHours.bathQuench)} h`,
+    `- Temper: ${formatNumber(report.recommendation.billableHours.temper)} h`,
+    `- Labor: ${formatNumber(report.recommendation.billableHours.labor)} h`,
+    "",
     "## Internal Cost Breakdown",
-    `- Setup/admin: $${report.recommendation.breakdown.setupAdmin.toFixed(2)}`,
-    `- Furnace: $${report.recommendation.breakdown.furnace.toFixed(2)}`,
-    `- Bath/quench: $${report.recommendation.breakdown.bathQuench.toFixed(2)}`,
-    `- Temper: $${report.recommendation.breakdown.temper.toFixed(2)}`,
-    `- Labor: $${report.recommendation.breakdown.labor.toFixed(2)}`,
-    `- Inspection: $${report.recommendation.breakdown.inspection.toFixed(2)}`,
-    `- Consumables: $${report.recommendation.breakdown.consumables.toFixed(2)}`,
-    `- Handling/packaging: $${report.recommendation.breakdown.handlingPackaging.toFixed(2)}`,
-    `- Scrap/rework reserve: $${report.recommendation.breakdown.scrapReworkReserve.toFixed(2)}`,
-    `- Overhead: $${report.recommendation.breakdown.overhead.toFixed(2)}`,
-    `- Margin: $${report.recommendation.breakdown.margin.toFixed(2)}`,
-    `- Expedite: $${report.recommendation.breakdown.expedite.toFixed(2)}`,
-    `- Manual adder/discount: $${report.recommendation.breakdown.manualAdderDiscount.toFixed(2)}`,
-    `- Minimum charge adjustment: $${report.recommendation.breakdown.minimumChargeAdjustment.toFixed(2)}`,
-    `- Total: $${report.recommendation.breakdown.total.toFixed(2)}`,
+    `- Setup/admin: ${formatMoney(report.recommendation.breakdown.setupAdmin)}`,
+    `- Furnace: ${formatMoney(report.recommendation.breakdown.furnace)}`,
+    `- Bath/quench: ${formatMoney(report.recommendation.breakdown.bathQuench)}`,
+    `- Temper: ${formatMoney(report.recommendation.breakdown.temper)}`,
+    `- Labor: ${formatMoney(report.recommendation.breakdown.labor)}`,
+    `- Inspection: ${formatMoney(report.recommendation.breakdown.inspection)}`,
+    `- Consumables: ${formatMoney(report.recommendation.breakdown.consumables)}`,
+    `- Handling/packaging: ${formatMoney(report.recommendation.breakdown.handlingPackaging)}`,
+    `- Scrap/rework reserve: ${formatMoney(report.recommendation.breakdown.scrapReworkReserve)}`,
+    `- Overhead: ${formatMoney(report.recommendation.breakdown.overhead)}`,
+    `- Margin: ${formatMoney(report.recommendation.breakdown.margin)}`,
+    `- Expedite: ${formatMoney(report.recommendation.breakdown.expedite)}`,
+    `- Manual adder/discount: ${formatMoney(report.recommendation.breakdown.manualAdderDiscount)}`,
+    `- Minimum charge adjustment: ${formatMoney(report.recommendation.breakdown.minimumChargeAdjustment)}`,
+    `- Total: ${formatMoney(report.recommendation.breakdown.total)}`,
+    "",
+    "## Internal Notes",
+    ...internalNoteLines,
+    "",
+    "## Validation Checks",
+    ...validationCheckLines,
     "",
     "## Model Notes",
     "Heat-treatment service pricing only. This quote excludes material, machining, outside services, freight, tax, and contractual terms unless entered separately as manual adjustments.",
@@ -108,4 +133,9 @@ function slugify(value: string): string {
 
 function formatNumber(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/\.?0+$/, "");
+}
+
+function formatMoney(value: number): string {
+  const amount = `$${Math.abs(value).toFixed(2)}`;
+  return value < 0 ? `-${amount}` : amount;
 }

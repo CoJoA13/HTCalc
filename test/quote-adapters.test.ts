@@ -67,17 +67,24 @@ describe("quote recipe adapters", () => {
       source: "imported",
     });
     expect(assumptions.temperCount).toBe(0);
-    expect(assumptions.validationBurdenHints).toContain("Review ADI validation checklist and required metallography before quoting.");
+    expect(assumptions.validationBurdenHints).toEqual([
+      "Review ADI validation checklist and required metallography before quoting.",
+      "Include hardness traverse or tensile testing when required by the customer specification.",
+    ]);
   });
 
   it("imports steel austempering process time and confidence", () => {
     const recommendation = recommendSteelAustemperingProcess(steelAustemperingInput);
-    const assumptions = quoteAssumptionsFromSteelAustempering(recommendation);
+    const recommendationWithWarning = {
+      ...recommendation,
+      warnings: ["Steel quote warning fixture."],
+    };
+    const assumptions = quoteAssumptionsFromSteelAustempering(recommendationWithWarning);
 
     expect(assumptions.sourceMode).toBe("steel-austempering");
     expect(assumptions.processLabel).toBe(`Steel Austempering - ${recommendation.expectedStructure}`);
-    expect(assumptions.processWarnings).toEqual(recommendation.warnings);
-    expect(assumptions.processWarnings).not.toBe(recommendation.warnings);
+    expect(assumptions.processWarnings).toEqual(["Steel quote warning fixture."]);
+    expect(assumptions.processWarnings).not.toBe(recommendationWithWarning.warnings);
     expect(assumptions.austenitizeMinutes).toEqual({
       label: "Austenitize soak after core reaches temperature",
       minMin: recommendation.austenitize.soakAfterCoreAtTemp.minMin,
@@ -94,7 +101,10 @@ describe("quote recipe adapters", () => {
     });
     expect(assumptions.processConfidence).toBe(recommendation.confidence);
     expect(assumptions.temperCount).toBe(0);
-    expect(assumptions.validationBurdenHints).toContain("Include hardenability review, final hardness traverse, and microstructure validation in quote scope.");
+    expect(assumptions.validationBurdenHints).toEqual([
+      "Include hardenability review, final hardness traverse, and microstructure validation in quote scope.",
+      "Confirm final cooling and handling requirements before sending pricing.",
+    ]);
   });
 
   it("imports martempering equalization and temper cycle assumptions", () => {
@@ -128,6 +138,9 @@ describe("quote recipe adapters", () => {
       source: "imported",
     });
     expect(assumptions.temperCount).toBe(recommendation.temper.temperCount);
-    expect(assumptions.validationBurdenHints).toContain("Include tempering validation and final hardness verification in quote scope.");
+    expect(assumptions.validationBurdenHints).toEqual([
+      "Include tempering validation and final hardness verification in quote scope.",
+      "Confirm retained-austenite, distortion, and prompt-temper risks before sending pricing.",
+    ]);
   });
 });

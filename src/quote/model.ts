@@ -7,8 +7,18 @@ import type {
   HeatTreatTimeAssumption,
 } from "./types.js";
 
+const quoteSourceModes = ["adi", "steel-austempering", "martempering", "manual"] as const;
+const quoteConfidences = ["green", "yellow", "red"] as const;
+const timeAssumptionSources = ["imported", "manual", "calculated"] as const;
+
 function invalidQuoteInput(fieldPath: string, requirement: string): RangeError {
   return new RangeError(`Invalid heat-treat quote input: ${fieldPath} must ${requirement}`);
+}
+
+function assertEnumValue(value: unknown, fieldPath: string, allowedValues: readonly string[]): void {
+  if (typeof value !== "string" || !allowedValues.includes(value)) {
+    throw invalidQuoteInput(fieldPath, `be one of ${allowedValues.join(", ")}.`);
+  }
 }
 
 function assertFiniteNonNegative(value: number, fieldPath: string): void {
@@ -51,12 +61,17 @@ function validateTimeAssumption(value: HeatTreatTimeAssumption | undefined, fiel
     return;
   }
 
+  assertEnumValue(value.source, `${fieldPath}.source`, timeAssumptionSources);
   assertFiniteNonNegative(value.nominalMin, `${fieldPath}.nominalMin`);
   assertOptionalNonNegative(value.minMin, `${fieldPath}.minMin`);
   assertOptionalNonNegative(value.maxMin, `${fieldPath}.maxMin`);
 }
 
 function validateInput(input: HeatTreatQuoteInput): void {
+  assertEnumValue(input.sourceMode, "sourceMode", quoteSourceModes);
+  assertEnumValue(input.importedProcess.sourceMode, "importedProcess.sourceMode", quoteSourceModes);
+  assertEnumValue(input.importedProcess.processConfidence, "importedProcess.processConfidence", quoteConfidences);
+
   assertFinitePositive(input.lot.quantity, "lot.quantity");
   assertOptionalPositive(input.lot.pieceWeightKg, "lot.pieceWeightKg");
   assertOptionalPositive(input.lot.totalWeightKg, "lot.totalWeightKg");
@@ -148,7 +163,7 @@ function hoursFromMinutes(
 }
 
 function billableHours(input: HeatTreatQuoteInput, cycles: number | null): HeatTreatBillableHours {
-  const temperCount = Math.max(1, input.importedProcess.temperCount || 1);
+  const temperCount = input.importedProcess.temperCount;
 
   return {
     furnace: input.manualOverrides.billableFurnaceHours
@@ -211,6 +226,10 @@ function buildWarnings(
     warnings.push("Manual quote source selected; imported process assumptions are not linked to a recipe.");
   }
 
+  if (input.adjustments.manualAdderDiscount !== 0) {
+    warnings.push("Manual adder/discount applied; review pricing before sending the quote.");
+  }
+
   if (input.importedProcess.processConfidence === "red") {
     warnings.push("Imported process confidence is red; review the recipe before sending the quote.");
   }
@@ -238,6 +257,10 @@ function buildWarnings(
   return warnings.filter((warning, index, all) => all.indexOf(warning) === index);
 }
 
+function dedupeLines(lines: readonly string[]): string[] {
+  return lines.filter((line, index, all) => all.indexOf(line) === index);
+}
+
 function quoteConfidence(
   input: HeatTreatQuoteInput,
   weightKg: number | null,
@@ -261,13 +284,14 @@ function quoteConfidence(
   return "green";
 }
 
-function validationChecks(): string[] {
-  return [
+function validationChecks(input: HeatTreatQuoteInput): string[] {
+  return dedupeLines([
     "Confirm shop rates, burden, and margin are current.",
     "Confirm quantity, piece weight, and load capacity against the RFQ package.",
     "Confirm imported process assumptions before sending customer pricing.",
     "Confirm inspection, certification, packaging, and expedite scope.",
-  ];
+    ...input.importedProcess.validationBurdenHints,
+  ]);
 }
 
 export function recommendHeatTreatQuote(input: HeatTreatQuoteInput): HeatTreatQuoteRecommendation {
@@ -347,6 +371,6 @@ export function recommendHeatTreatQuote(input: HeatTreatQuoteInput): HeatTreatQu
       `Cycle count: ${cycles ?? "manual"}`,
       `Billable furnace/bath/temper/labor hours: ${round(hours.furnace, 3)} / ${round(hours.bathQuench, 3)} / ${round(hours.temper, 3)} / ${round(hours.labor, 3)}`,
     ],
-    validationChecks: validationChecks(),
+    validationChecks: validationChecks(input),
   };
 }

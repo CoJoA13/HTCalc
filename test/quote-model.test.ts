@@ -80,6 +80,9 @@ describe("heat-treat quote model", () => {
       handlingPackaging: 25,
       scrapReworkReserve: 50.75,
       overhead: 106.58,
+      margin: 293.08,
+      expedite: 0,
+      manualAdderDiscount: 0,
       minimumChargeAdjustment: 0,
       total: 1465.41,
     });
@@ -87,6 +90,45 @@ describe("heat-treat quote model", () => {
     expect(quote.unitPrice).toBe(14.65);
     expect(quote.pricePerKg).toBe(7.33);
     expect(quote.confidence).toBe("green");
+  });
+
+  it("treats zero temper count as zero billable temper cycles", () => {
+    const quote = recommendHeatTreatQuote({
+      ...baseInput,
+      importedProcess: {
+        ...baseInput.importedProcess,
+        temperMinutes: {
+          label: "Temper hold",
+          nominalMin: 30,
+          source: "imported",
+        },
+        temperCount: 0,
+      },
+    });
+
+    expect(quote.billableHours.temper).toBe(0);
+    expect(quote.breakdown.temper).toBe(0);
+    expect(quote.importedAssumptions).toContain("Temper pricing time: 30 min x 0.");
+  });
+
+  it("retains imported validation burden hints in validation checks", () => {
+    const quote = recommendHeatTreatQuote(baseInput);
+
+    expect(quote.validationChecks).toContain("Confirm final hardness traverse.");
+  });
+
+  it("warns and downgrades confidence for manual price adjustments", () => {
+    const quote = recommendHeatTreatQuote({
+      ...baseInput,
+      adjustments: {
+        ...baseInput.adjustments,
+        manualAdderDiscount: -75,
+      },
+    });
+
+    expect(quote.breakdown.manualAdderDiscount).toBe(-75);
+    expect(quote.warnings).toContain("Manual adder/discount applied; review pricing before sending the quote.");
+    expect(quote.confidence).toBe("yellow");
   });
 
   it("enforces the minimum lot charge after price adjustments", () => {
@@ -181,6 +223,27 @@ describe("heat-treat quote model", () => {
 
     expect(quote.confidence).toBe("red");
     expect(quote.warnings).toContain("Imported process confidence is red; review the recipe before sending the quote.");
+  });
+
+  it("rejects invalid quote source modes", () => {
+    expect(() =>
+      recommendHeatTreatQuote({
+        ...baseInput,
+        sourceMode: "powder-coating",
+      } as unknown as HeatTreatQuoteInput),
+    ).toThrow("Invalid heat-treat quote input: sourceMode must be one of adi, steel-austempering, martempering, manual.");
+  });
+
+  it("rejects invalid imported process confidence values", () => {
+    expect(() =>
+      recommendHeatTreatQuote({
+        ...baseInput,
+        importedProcess: {
+          ...baseInput.importedProcess,
+          processConfidence: "blue",
+        },
+      } as unknown as HeatTreatQuoteInput),
+    ).toThrow("Invalid heat-treat quote input: importedProcess.processConfidence must be one of green, yellow, red.");
   });
 
   it("rejects invalid target margins", () => {

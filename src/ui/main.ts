@@ -73,8 +73,12 @@ import {
   deleteQuoteRatePreset,
   findQuoteRatePreset,
   loadQuoteRatePresetLibrary,
+  mergeQuoteRatePresetLibraries,
+  parseQuoteRatePresetLibraryJson,
   persistQuoteRatePresetLibrary,
+  quoteRatePresetExportFilename,
   saveQuoteRatePreset,
+  serializeQuoteRatePresetLibrary,
   sortedQuoteRatePresets,
   type QuoteRatePreset,
   type QuoteRatePresetLibrary,
@@ -641,9 +645,16 @@ function quoteRatePresetControls(): string {
         <button class="secondary-action" type="button" data-quote-rate-preset-action="save">
           <i class="ph ph-floppy-disk"></i><span>Save Current</span>
         </button>
+        <button class="secondary-action" type="button" data-quote-rate-preset-action="import">
+          <i class="ph ph-upload-simple"></i><span>Import</span>
+        </button>
+        <button class="secondary-action" type="button" data-quote-rate-preset-action="export"${disabled}>
+          <i class="ph ph-download-simple"></i><span>Export</span>
+        </button>
         <button class="secondary-action" type="button" data-quote-rate-preset-action="delete"${disabled}>
           <i class="ph ph-trash"></i><span>Delete</span>
         </button>
+        <input id="quote-rate-preset-import-input" class="file-input" type="file" accept=".json,application/json" />
       </div>
     </div>
   `;
@@ -942,6 +953,7 @@ function bindQuoteInputs(): void {
 
 function bindQuoteRatePresetControls(): void {
   const select = document.querySelector<HTMLSelectElement>("#quote-rate-preset-select");
+  const importInput = document.querySelector<HTMLInputElement>("#quote-rate-preset-import-input");
   select?.addEventListener("change", () => {
     selectedQuoteRatePresetId = select.value;
   });
@@ -953,8 +965,19 @@ function bindQuoteRatePresetControls(): void {
     .querySelector<HTMLButtonElement>('[data-quote-rate-preset-action="save"]')
     ?.addEventListener("click", saveCurrentQuoteRatePreset);
   document
+    .querySelector<HTMLButtonElement>('[data-quote-rate-preset-action="import"]')
+    ?.addEventListener("click", () => {
+      importInput?.click();
+    });
+  document
+    .querySelector<HTMLButtonElement>('[data-quote-rate-preset-action="export"]')
+    ?.addEventListener("click", exportQuoteRatePresets);
+  document
     .querySelector<HTMLButtonElement>('[data-quote-rate-preset-action="delete"]')
     ?.addEventListener("click", deleteSelectedQuoteRatePreset);
+  importInput?.addEventListener("change", () => {
+    void importQuoteRatePresets(importInput);
+  });
 }
 
 function selectedQuoteRatePreset(): QuoteRatePreset | undefined {
@@ -970,7 +993,11 @@ function applySelectedQuoteRatePreset(): void {
 
   replaceQuoteShopRates(preset.shopRates);
   renderWorkspace();
-  showProjectStatus(`Applied rate preset "${preset.name}".`);
+  showProjectStatus(`Applied rate preset "${quoteRatePresetDisplayName(preset)}".`);
+}
+
+function quoteRatePresetDisplayName(preset: QuoteRatePreset): string {
+  return preset.name.trim();
 }
 
 function saveCurrentQuoteRatePreset(): void {
@@ -981,14 +1008,14 @@ function saveCurrentQuoteRatePreset(): void {
 
   const name = enteredName.trim();
   if (!name) {
-    showProjectStatus("Rate preset name was blank; no rates saved.", true);
+    showProjectStatus("Preset name is required. No rates were saved.", true);
     return;
   }
 
   try {
     const result = saveQuoteRatePreset(quoteRatePresetLibrary, name, heatTreatQuoteState.shopRates);
     if (!persistQuoteRatePresetLibrary(result.library)) {
-      showProjectStatus("Rate preset could not be saved in this browser.", true);
+      showProjectStatus("Could not save preset in this browser. Existing presets were unchanged.", true);
       return;
     }
 
@@ -1001,6 +1028,59 @@ function saveCurrentQuoteRatePreset(): void {
   }
 }
 
+function exportQuoteRatePresets(): void {
+  if (quoteRatePresetLibrary.presets.length === 0) {
+    showProjectStatus("Save a rate preset before exporting.", true);
+    return;
+  }
+
+  try {
+    const blob = new Blob([serializeQuoteRatePresetLibrary(quoteRatePresetLibrary)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    try {
+      link.href = url;
+      link.download = quoteRatePresetExportFilename();
+      document.body.append(link);
+      link.click();
+    } finally {
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+    showProjectStatus(`Exported ${quoteRatePresetLibrary.presets.length} rate preset${quoteRatePresetLibrary.presets.length === 1 ? "" : "s"}.`);
+  } catch {
+    showProjectStatus("Could not export presets. Try again or check browser download permissions.", true);
+  }
+}
+
+async function importQuoteRatePresets(input: HTMLInputElement): Promise<void> {
+  const file = input.files?.[0];
+  if (!file) {
+    return;
+  }
+
+  try {
+    const importedLibrary = parseQuoteRatePresetLibraryJson(await file.text());
+    const result = mergeQuoteRatePresetLibraries(quoteRatePresetLibrary, importedLibrary);
+    if (!persistQuoteRatePresetLibrary(result.library)) {
+      showProjectStatus("Could not import presets in this browser. Existing presets were unchanged.", true);
+      return;
+    }
+
+    quoteRatePresetLibrary = result.library;
+    selectedQuoteRatePresetId = result.selectedPresetId || selectedQuoteRatePresetId;
+    normalizeSelectedQuoteRatePresetId();
+    renderWorkspace();
+    showProjectStatus(`Imported rate presets: ${result.addedCount} added, ${result.updatedCount} updated.`);
+  } catch {
+    showProjectStatus("Could not import presets. Choose a valid HTCalc RFQ preset file.", true);
+  } finally {
+    input.value = "";
+  }
+}
+
 function deleteSelectedQuoteRatePreset(): void {
   const preset = selectedQuoteRatePreset();
   if (!preset) {
@@ -1008,20 +1088,20 @@ function deleteSelectedQuoteRatePreset(): void {
     return;
   }
 
-  if (!window.confirm(`Delete rate preset "${preset.name}"?`)) {
+  if (!window.confirm(`Delete rate preset "${quoteRatePresetDisplayName(preset)}"?`)) {
     return;
   }
 
   const nextLibrary = deleteQuoteRatePreset(quoteRatePresetLibrary, preset.id);
   if (!persistQuoteRatePresetLibrary(nextLibrary)) {
-    showProjectStatus("Rate preset could not be deleted in this browser.", true);
+    showProjectStatus("Could not delete preset in this browser. Existing presets were unchanged.", true);
     return;
   }
 
   quoteRatePresetLibrary = nextLibrary;
   normalizeSelectedQuoteRatePresetId();
   renderWorkspace();
-  showProjectStatus(`Deleted rate preset "${preset.name}".`);
+  showProjectStatus(`Deleted rate preset "${quoteRatePresetDisplayName(preset)}".`);
 }
 
 function replaceQuoteShopRates(shopRates: HeatTreatShopRates): void {

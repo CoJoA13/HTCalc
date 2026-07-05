@@ -8,6 +8,12 @@ export interface QuotePerWeightDisplay {
   readonly value: number | null;
 }
 
+export interface QuoteWeightDisplay {
+  readonly label: "Total weight";
+  readonly unit: "kg" | "lb";
+  readonly value: number | null;
+}
+
 export function quotePerWeightDisplay(
   pricePerKg: number | null,
   unitSystem: UnitSystem,
@@ -24,5 +30,24 @@ export function quotePerWeightDisplay(
     label: "Price/kg",
     unit: "kg",
     value: pricePerKg,
+  };
+}
+
+export function quoteWeightDisplay(
+  totalWeightKg: number | null,
+  unitSystem: UnitSystem,
+): QuoteWeightDisplay {
+  if (unitSystem === "imperial") {
+    return {
+      label: "Total weight",
+      unit: "lb",
+      value: totalWeightKg === null ? null : totalWeightKg / KG_PER_POUND,
+    };
+  }
+
+  return {
+    label: "Total weight",
+    unit: "kg",
+    value: totalWeightKg,
   };
 }

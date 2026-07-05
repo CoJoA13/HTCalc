@@ -3,7 +3,10 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { QUOTE_RATE_PRESETS_STORAGE_KEY } from "../src/ui/quote-rate-presets.js";
+import {
+  QUOTE_RATE_PRESETS_STORAGE_KEY,
+  type QuoteRatePresetLibrary,
+} from "../src/ui/quote-rate-presets.js";
 
 let savedProjectBlob: Blob | null = null;
 let createdObjectUrlBlobs: Blob[] = [];
@@ -218,6 +221,110 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(ratePresetActionButton("delete").disabled).toBe(true);
     expect(JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}").presets).toEqual([]);
   });
+
+  it("requires a name before saving RFQ shop-rate presets", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("   ");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    clickRatePresetAction("save");
+
+    expect(projectStatusText()).toBe("Preset name is required. No rates were saved.");
+    expect(ratePresetSelectText()).toContain("No saved presets");
+    expect(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY)).toBeNull();
+  });
+
+  it("exports RFQ shop-rate presets as a preset library JSON file", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Exported RFQ");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    clickRatePresetAction("save");
+    clickRatePresetAction("export");
+
+    expect(clickedDownloadNames.at(-1)).toMatch(/^htcalc-rfq-rate-presets-\d{4}-\d{2}-\d{2}\.json$/);
+    const exported = JSON.parse(await latestCreatedBlob().text()) as QuoteRatePresetLibrary;
+    expect(exported).toMatchObject({
+      version: 1,
+      presets: [
+        {
+          name: "Exported RFQ",
+          shopRates: {
+            minimumLotCharge: 500,
+            furnaceRatePerHour: 125,
+          },
+        },
+      ],
+    });
+  });
+
+  it("cleans up RFQ preset export downloads when the browser click fails", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Blocked Export RFQ");
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clickedDownloadNames.push(this.download);
+      throw new Error("Download blocked");
+    });
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    clickRatePresetAction("save");
+    clickRatePresetAction("export");
+
+    expect(projectStatusText()).toBe("Could not export presets. Try again or check browser download permissions.");
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:htcalc-1");
+    expect(document.querySelector('a[download^="htcalc-rfq-rate-presets-"]')).toBeNull();
+  });
+
+  it("imports RFQ shop-rate presets into an empty local library", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    await importRatePresetFile(presetLibraryJson("Imported RFQ"));
+
+    expect(ratePresetSelectText()).toContain("Imported RFQ");
+    expect(projectStatusText()).toBe("Imported rate presets: 1 added, 0 updated.");
+    expect(ratePresetActionButton("apply").disabled).toBe(false);
+    expect(ratePresetActionButton("export").disabled).toBe(false);
+  });
+
+  it("merges imported RFQ shop-rate presets by name", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Merge RFQ");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("shopRates.minimumLotCharge", "300");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "90");
+    clickRatePresetAction("save");
+
+    await importRatePresetFile(presetLibraryJson(" merge rfq ", {
+      minimumLotCharge: 850,
+      furnaceRatePerHour: 175,
+    }));
+    expect(projectStatusText()).toBe("Imported rate presets: 0 added, 1 updated.");
+    clickRatePresetAction("apply");
+
+    expect(projectStatusText()).toBe("Applied rate preset \"merge rfq\".");
+    expect(quoteControl<HTMLInputElement>("shopRates.minimumLotCharge").value).toBe("850");
+    expect(quoteControl<HTMLInputElement>("shopRates.furnaceRatePerHour").value).toBe("175");
+    const stored = JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}") as QuoteRatePresetLibrary;
+    expect(stored.presets).toHaveLength(1);
+  });
+
+  it("rejects invalid RFQ preset import files without changing existing presets", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Existing RFQ");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    clickRatePresetAction("save");
+    await importRatePresetFile("{");
+
+    expect(projectStatusText()).toBe("Could not import presets. Choose a valid HTCalc RFQ preset file.");
+    expect(ratePresetSelectText()).toContain("Existing RFQ");
+    const stored = JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}") as QuoteRatePresetLibrary;
+    expect(stored.presets.map((preset) => preset.name)).toEqual(["Existing RFQ"]);
+  });
 });
 
 function clickMode(modeId: string): void {
@@ -238,7 +345,9 @@ function setQuoteNumber(path: string, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-function clickRatePresetAction(action: "apply" | "save" | "delete"): void {
+type RatePresetAction = "apply" | "save" | "import" | "export" | "delete";
+
+function clickRatePresetAction(action: RatePresetAction): void {
   ratePresetActionButton(action).click();
 }
 
@@ -252,7 +361,51 @@ function ratePresetSelect(): HTMLSelectElement {
   return select!;
 }
 
-function ratePresetActionButton(action: "apply" | "save" | "delete"): HTMLButtonElement {
+function projectStatusText(): string {
+  return compactText(document.querySelector("#project-status")?.textContent ?? "");
+}
+
+async function importRatePresetFile(contents: string, filename = "presets.json"): Promise<void> {
+  const input = document.querySelector<HTMLInputElement>("#quote-rate-preset-import-input");
+  expect(input).not.toBeNull();
+  const file = new File([contents], filename, { type: "application/json" });
+  Object.defineProperty(input!, "files", {
+    configurable: true,
+    value: [file],
+  });
+  input!.dispatchEvent(new Event("change", { bubbles: true }));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function presetLibraryJson(name: string, overrides: Partial<QuoteRatePresetLibrary["presets"][number]["shopRates"]> = {}): string {
+  return JSON.stringify({
+    version: 1,
+    presets: [
+      {
+        id: `imported-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+        name,
+        shopRates: {
+          minimumLotCharge: 700,
+          setupAdminCharge: 110,
+          laborRatePerHour: 95,
+          furnaceRatePerHour: 150,
+          bathQuenchRatePerHour: 105,
+          temperFurnaceRatePerHour: 85,
+          inspectionBaseCharge: 65,
+          consumablesPerKg: 0.65,
+          handlingPackagingCharge: 35,
+          overheadPercent: 19,
+          targetMarginPercent: 24,
+          ...overrides,
+        },
+        createdAt: "2026-07-05T14:00:00.000Z",
+        updatedAt: "2026-07-05T14:00:00.000Z",
+      },
+    ],
+  });
+}
+
+function ratePresetActionButton(action: RatePresetAction): HTMLButtonElement {
   const button = document.querySelector<HTMLButtonElement>(`[data-quote-rate-preset-action="${action}"]`);
   expect(button).not.toBeNull();
   return button!;

@@ -25,6 +25,17 @@ export interface SaveQuoteRatePresetResult {
   readonly preset: QuoteRatePreset;
 }
 
+export interface MergeQuoteRatePresetLibrariesOptions {
+  readonly idFactory?: () => string;
+}
+
+export interface MergeQuoteRatePresetLibrariesResult {
+  readonly library: QuoteRatePresetLibrary;
+  readonly selectedPresetId: string;
+  readonly addedCount: number;
+  readonly updatedCount: number;
+}
+
 export type QuoteRatePresetStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export function emptyQuoteRatePresetLibrary(): QuoteRatePresetLibrary {
@@ -68,6 +79,71 @@ export function persistQuoteRatePresetLibrary(
   } catch {
     return false;
   }
+}
+
+export function serializeQuoteRatePresetLibrary(library: QuoteRatePresetLibrary): string {
+  return `${JSON.stringify(parseQuoteRatePresetLibrary(library), null, 2)}\n`;
+}
+
+export function parseQuoteRatePresetLibraryJson(json: string): QuoteRatePresetLibrary {
+  return parseQuoteRatePresetLibrary(JSON.parse(json));
+}
+
+export function quoteRatePresetExportFilename(exportedAt = new Date()): string {
+  return `htcalc-rfq-rate-presets-${exportedAt.toISOString().slice(0, 10)}.json`;
+}
+
+export function mergeQuoteRatePresetLibraries(
+  localLibrary: QuoteRatePresetLibrary,
+  importedLibrary: QuoteRatePresetLibrary,
+  options: MergeQuoteRatePresetLibrariesOptions = {},
+): MergeQuoteRatePresetLibrariesResult {
+  const local = parseQuoteRatePresetLibrary(localLibrary);
+  const imported = parseQuoteRatePresetLibrary(importedLibrary);
+  const presets = [...local.presets];
+  const usedIds = new Set(presets.map((preset) => preset.id));
+  const touchedPresetIds: string[] = [];
+  let addedCount = 0;
+  let updatedCount = 0;
+
+  for (const importedPreset of imported.presets) {
+    const existingIndex = presets.findIndex(
+      (preset) => normalizePresetName(preset.name) === normalizePresetName(importedPreset.name),
+    );
+
+    if (existingIndex >= 0) {
+      const existingPreset = presets[existingIndex]!;
+      const preset: QuoteRatePreset = {
+        ...importedPreset,
+        id: existingPreset.id,
+        createdAt: existingPreset.createdAt,
+        shopRates: cloneValidShopRates(importedPreset.shopRates),
+      };
+      presets[existingIndex] = preset;
+      touchedPresetIds.push(preset.id);
+      updatedCount += 1;
+      continue;
+    }
+
+    const preset: QuoteRatePreset = {
+      ...importedPreset,
+      id: uniquePresetId(importedPreset.id, usedIds, options.idFactory),
+      shopRates: cloneValidShopRates(importedPreset.shopRates),
+    };
+    presets.push(preset);
+    touchedPresetIds.push(preset.id);
+    addedCount += 1;
+  }
+
+  return {
+    library: {
+      version: 1,
+      presets: sortedPresets(presets),
+    },
+    selectedPresetId: touchedPresetIds[0] ?? "",
+    addedCount,
+    updatedCount,
+  };
 }
 
 export function saveQuoteRatePreset(
@@ -160,8 +236,8 @@ function parseQuoteRatePresetLibrary(value: unknown): QuoteRatePresetLibrary {
 function parseQuoteRatePreset(value: unknown): QuoteRatePreset {
   assertRecord(value);
   const id = requiredString(value.id, "id");
-  const name = requiredString(value.name, "name").trim();
-  if (!name) {
+  const name = requiredString(value.name, "name");
+  if (!name.trim()) {
     throw new Error("Invalid rate preset name.");
   }
 
@@ -241,6 +317,19 @@ function sortedPresets(presets: readonly QuoteRatePreset[]): readonly QuoteRateP
 
 function normalizePresetName(name: string): string {
   return name.trim().toLowerCase();
+}
+
+function uniquePresetId(
+  preferredId: string,
+  usedIds: Set<string>,
+  idFactory: (() => string) | undefined,
+): string {
+  let id = preferredId;
+  while (usedIds.has(id)) {
+    id = idFactory?.() ?? createPresetId();
+  }
+  usedIds.add(id);
+  return id;
 }
 
 function createPresetId(): string {

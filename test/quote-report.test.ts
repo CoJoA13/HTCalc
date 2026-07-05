@@ -7,6 +7,7 @@ import {
 } from "../src/ui/quote-report.js";
 import {
   quotePerWeightDisplay,
+  quoteWeightDisplay,
 } from "../src/ui/quote-display.js";
 import type { ValidationChecklistState } from "../src/ui/project-state.js";
 
@@ -229,7 +230,10 @@ describe("quote report markdown", () => {
 
     const markdown = serializeQuoteReportMarkdown(report);
     const perWeight = quotePerWeightDisplay(recommendation.pricePerKg, "imperial");
+    const totalWeight = quoteWeightDisplay(recommendation.totalWeightKg, "imperial");
 
+    expect(markdown).toContain(`Total weight: ${formatExpectedNumber(totalWeight.value ?? 0)} lb`);
+    expect(markdown).not.toContain("Total weight: 200 kg");
     expect(markdown).toContain(`Price per lb: $${perWeight.value?.toFixed(2)}`);
     expect(markdown).not.toContain("Price per kg");
   });
@@ -251,6 +255,7 @@ describe("quote report markdown", () => {
 
     const markdown = serializeQuoteReportMarkdown(report);
 
+    expect(markdown).toContain("Total weight: Unavailable");
     expect(markdown).toContain("Price per lb: Unavailable");
     expect(markdown).toContain("- Price per lb: unavailable");
     expect(markdown).not.toContain("Price per kg");

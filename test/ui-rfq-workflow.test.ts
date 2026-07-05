@@ -90,11 +90,15 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(metricStripText()).toContain("/lb");
     expect(metricStripText()).not.toContain("Price/kg");
     expect(metricStripText()).not.toContain("/kg");
+    expect(recommendationText()).toContain("Price per lb");
+    expect(recommendationText()).not.toContain("Price per kg");
 
     document.querySelector<HTMLButtonElement>('[data-quote-report-action="open"]')?.click();
     expect(reportText()).toContain("Quote Summary");
     expect(reportText()).toContain("Price/lb");
     expect(reportText()).not.toContain("Price/kg");
+    expect(reportText()).toContain("Price per lb");
+    expect(reportText()).not.toContain("Price per kg");
     document.querySelector<HTMLButtonElement>("#report-close")?.click();
 
     document.querySelector<HTMLButtonElement>('[data-quote-report-action="print"]')?.click();

@@ -252,6 +252,7 @@ describe("quote report markdown", () => {
     const markdown = serializeQuoteReportMarkdown(report);
 
     expect(markdown).toContain("Price per lb: Unavailable");
+    expect(markdown).toContain("- Price per lb: unavailable");
     expect(markdown).not.toContain("Price per kg");
   });
 

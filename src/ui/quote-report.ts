@@ -35,6 +35,19 @@ export function createQuoteReportViewModel(
   };
 }
 
+export function displayQuoteCustomerSummaryLines(
+  recommendation: HeatTreatQuoteRecommendation,
+  unitSystem: UnitSystem,
+): string[] {
+  const perWeight = quotePerWeightDisplay(recommendation.pricePerKg, unitSystem);
+  const perWeightLabel = `Price per ${perWeight.unit}`;
+  const perWeightValue = perWeight.value === null ? "unavailable" : formatMoney(perWeight.value);
+
+  return recommendation.customerSummaryLines.map((line) => (
+    quoteCustomerSummaryLine(line, perWeightLabel, perWeightValue)
+  ));
+}
+
 export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): string {
   const notes = report.metadata.notes.trim() || "No project notes entered.";
   const warningLines = report.recommendation.warnings.length > 0
@@ -56,7 +69,7 @@ export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): stri
   const perWeightLabel = `Price per ${perWeight.unit}`;
   const perWeightValue = perWeight.value === null ? "Unavailable" : formatMoney(perWeight.value);
   const customerSummaryLines = report.recommendation.customerSummaryLines.length > 0
-    ? report.recommendation.customerSummaryLines.map((line) => `- ${quoteCustomerSummaryLine(line, perWeightLabel, perWeightValue)}`)
+    ? displayQuoteCustomerSummaryLines(report.recommendation, report.unitSystem).map((line) => `- ${line}`)
     : ["- No customer quote summary lines generated."];
 
   return [

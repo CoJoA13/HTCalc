@@ -60,6 +60,7 @@ import {
 } from "./project-state.js";
 import {
   createQuoteReportViewModel,
+  displayQuoteCustomerSummaryLines,
   quoteReportMarkdownFilename,
   serializeQuoteReportMarkdown,
   type QuoteReportViewModel,
@@ -1536,6 +1537,7 @@ function renderQuoteRecommendation(): void {
       ? result.warnings
       : ["No active quote warnings for the current input set."];
     const perWeight = quotePerWeightDisplay(result.pricePerKg, unitSystem);
+    const customerSummaryLines = displayQuoteCustomerSummaryLines(result, unitSystem);
 
     recommendationPanel.innerHTML = `
       <div class="summary-header">
@@ -1573,7 +1575,7 @@ function renderQuoteRecommendation(): void {
 
       <div class="result-section">
         <div class="result-title"><i class="ph ph-list-checks"></i> Customer Summary</div>
-        <ul class="check-list">${result.customerSummaryLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
+        <ul class="check-list">${customerSummaryLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
       </div>
 
       <div class="result-section">
@@ -2165,7 +2167,7 @@ function quoteReportHtml(report: QuoteReportViewModel): string {
     ? report.recommendation.importedAssumptions
     : ["No imported assumptions."];
   const customerSummaryLines = report.recommendation.customerSummaryLines.length > 0
-    ? report.recommendation.customerSummaryLines
+    ? displayQuoteCustomerSummaryLines(report.recommendation, report.unitSystem)
     : ["No customer quote summary lines generated."];
   const internalNotes = report.recommendation.internalNotes.length > 0
     ? report.recommendation.internalNotes

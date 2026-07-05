@@ -5,8 +5,12 @@ import {
   deleteQuoteRatePreset,
   findQuoteRatePreset,
   loadQuoteRatePresetLibrary,
+  mergeQuoteRatePresetLibraries,
+  parseQuoteRatePresetLibraryJson,
   persistQuoteRatePresetLibrary,
+  quoteRatePresetExportFilename,
   saveQuoteRatePreset,
+  serializeQuoteRatePresetLibrary,
   sortedQuoteRatePresets,
   type QuoteRatePreset,
   type QuoteRatePresetLibrary,
@@ -213,6 +217,76 @@ describe("quote rate presets", () => {
     };
 
     expect(sortedQuoteRatePresets(library).map((preset) => preset.id)).toEqual(["preset-2", "preset-1"]);
+  });
+
+  it("serializes and parses preset library JSON", () => {
+    const library: QuoteRatePresetLibrary = {
+      version: 1,
+      presets: [makePreset("preset-1", "Standard RFQ")],
+    };
+
+    const serialized = serializeQuoteRatePresetLibrary(library);
+
+    expect(serialized.endsWith("\n")).toBe(true);
+    expect(parseQuoteRatePresetLibraryJson(serialized)).toEqual(library);
+  });
+
+  it("rejects malformed preset import JSON and invalid library shapes", () => {
+    expect(() => parseQuoteRatePresetLibraryJson("{")).toThrow();
+    expect(() => parseQuoteRatePresetLibraryJson(JSON.stringify({ version: 2, presets: [] }))).toThrow(
+      "Invalid rate preset library.",
+    );
+  });
+
+  it("builds rate preset export filenames from the export date", () => {
+    expect(quoteRatePresetExportFilename(new Date("2026-07-05T12:00:00.000Z"))).toBe(
+      "htcalc-rfq-rate-presets-2026-07-05.json",
+    );
+  });
+
+  it("merges imported presets by case-insensitive name and reports counts", () => {
+    const localPreset = makePreset("local-1", "Standard RFQ");
+    const importedPreset: QuoteRatePreset = {
+      ...makePreset("imported-1", " standard rfq "),
+      shopRates: { ...sampleRates, furnaceRatePerHour: 150 },
+      updatedAt: "2026-07-05T13:00:00.000Z",
+    };
+
+    const result = mergeQuoteRatePresetLibraries(
+      { version: 1, presets: [localPreset] },
+      { version: 1, presets: [importedPreset] },
+    );
+
+    expect(result.addedCount).toBe(0);
+    expect(result.updatedCount).toBe(1);
+    expect(result.selectedPresetId).toBe("local-1");
+    expect(result.library.presets).toEqual([
+      {
+        ...importedPreset,
+        id: "local-1",
+        createdAt: localPreset.createdAt,
+      },
+    ]);
+  });
+
+  it("adds imported presets and avoids id collisions", () => {
+    const localPreset = makePreset("preset-1", "Local RFQ");
+    const importedPreset = makePreset("preset-1", "Imported RFQ");
+
+    const result = mergeQuoteRatePresetLibraries(
+      { version: 1, presets: [localPreset] },
+      { version: 1, presets: [importedPreset] },
+      { idFactory: () => "imported-2" },
+    );
+
+    expect(result.addedCount).toBe(1);
+    expect(result.updatedCount).toBe(0);
+    expect(result.selectedPresetId).toBe("imported-2");
+    expect(result.library.presets.map((preset) => preset.id).sort()).toEqual(["imported-2", "preset-1"]);
+    expect(findQuoteRatePreset(result.library, "imported-2")).toMatchObject({
+      name: "Imported RFQ",
+      shopRates: sampleRates,
+    });
   });
 
   it("rejects invalid shop-rate values when saving or loading", () => {

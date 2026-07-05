@@ -4,6 +4,7 @@ All notable project changes are summarized here.
 
 ## Unreleased
 
+- Replaced RFQ preset save/delete browser prompts with app-native dialogs.
 - Added RFQ field-level validation messages and stale-result recovery for invalid quote edits.
 - Staged the Heat-Treat RFQ input pane into accessible accordions for source assumptions, lot capacity, shop rates, optional overrides, and review/export readiness.
 - Added RFQ preset import/export, clearer preset action statuses, and unit-system-aware RFQ Markdown total weight.

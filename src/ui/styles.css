@@ -1063,6 +1063,109 @@ button:focus-visible {
   display: none;
 }
 
+.quote-rate-preset-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 11;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgb(15 23 42 / 34%);
+}
+
+.quote-rate-preset-dialog-backdrop[hidden] {
+  display: none;
+}
+
+.quote-rate-preset-dialog {
+  width: min(460px, 100%);
+  overflow: hidden;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 20px 50px rgb(15 23 42 / 20%);
+}
+
+.quote-rate-preset-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #dbe3ec;
+}
+
+.quote-rate-preset-dialog-header h2 {
+  margin: 4px 0 0;
+  color: #172033;
+  font-size: 20px;
+}
+
+#quote-rate-preset-dialog-content > p,
+#quote-rate-preset-dialog-content > .field,
+#quote-rate-preset-dialog-content > .field-help {
+  margin: 12px 16px 0;
+}
+
+#quote-rate-preset-dialog-content > p {
+  color: #526074;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#quote-rate-preset-dialog-content > p,
+#quote-rate-preset-dialog-content > .field-help,
+.quote-rate-preset-dialog [data-quote-rate-preset-dialog-message] {
+  overflow-wrap: anywhere;
+}
+
+#quote-rate-preset-dialog-content > .field {
+  margin-top: 14px;
+}
+
+.quote-rate-preset-dialog .field input {
+  height: 38px;
+}
+
+#quote-rate-preset-dialog-content > .field-help {
+  color: #677386;
+  font-size: 12px;
+  font-weight: 620;
+  line-height: 1.35;
+}
+
+.quote-rate-preset-dialog [data-quote-rate-preset-dialog-message] {
+  min-height: 17px;
+  color: #526074;
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.4;
+}
+
+.quote-rate-preset-dialog [data-quote-rate-preset-dialog-message][hidden] {
+  display: none;
+}
+
+.quote-rate-preset-dialog [data-quote-rate-preset-dialog-message][role="alert"] {
+  color: #b42318;
+}
+
+.quote-rate-preset-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-top: 1px solid #dbe3ec;
+  background: #f8fafc;
+}
+
+.quote-rate-preset-dialog-actions .destructive-action {
+  border-color: #b42318;
+  background: #b42318;
+  color: #ffffff;
+}
+
 .settings-panel {
   width: min(520px, 100vw);
   height: 100vh;
@@ -1368,6 +1471,15 @@ button:focus-visible {
 
   .quote-rate-preset-actions .secondary-action {
     flex: 1 1 120px;
+  }
+
+  .quote-rate-preset-dialog-actions {
+    flex-direction: column-reverse;
+  }
+
+  .quote-rate-preset-dialog-actions .primary-action,
+  .quote-rate-preset-dialog-actions .secondary-action {
+    width: 100%;
   }
 
   .quote-accordion-toggle {

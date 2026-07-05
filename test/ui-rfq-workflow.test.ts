@@ -3,6 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QUOTE_RATE_PRESETS_STORAGE_KEY } from "../src/ui/quote-rate-presets.js";
 
 let savedProjectBlob: Blob | null = null;
 let createdObjectUrlBlobs: Blob[] = [];
@@ -190,6 +191,33 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(quoteControl<HTMLInputElement>("shopRates.furnaceRatePerHour").value).toBe("125");
     expect(recommendationText()).toContain("Heat-Treat RFQ");
   });
+
+  it("deletes RFQ shop-rate presets without changing current quote rates", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Delete Me RFQ");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+
+    clickRatePresetAction("save");
+    expect(ratePresetSelectText()).toContain("Delete Me RFQ");
+
+    setQuoteNumber("shopRates.minimumLotCharge", "50");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "1");
+
+    clickRatePresetAction("delete");
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(quoteControl<HTMLInputElement>("shopRates.minimumLotCharge").value).toBe("50");
+    expect(quoteControl<HTMLInputElement>("shopRates.furnaceRatePerHour").value).toBe("1");
+    expect(ratePresetSelectText()).toContain("No saved presets");
+    expect(ratePresetSelect().disabled).toBe(true);
+    expect(ratePresetActionButton("apply").disabled).toBe(true);
+    expect(ratePresetActionButton("delete").disabled).toBe(true);
+    expect(JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}").presets).toEqual([]);
+  });
 });
 
 function clickMode(modeId: string): void {
@@ -211,15 +239,23 @@ function setQuoteNumber(path: string, value: string): void {
 }
 
 function clickRatePresetAction(action: "apply" | "save" | "delete"): void {
-  const button = document.querySelector<HTMLButtonElement>(`[data-quote-rate-preset-action="${action}"]`);
-  expect(button).not.toBeNull();
-  button!.click();
+  ratePresetActionButton(action).click();
 }
 
 function ratePresetSelectText(): string {
+  return compactText(ratePresetSelect().textContent ?? "");
+}
+
+function ratePresetSelect(): HTMLSelectElement {
   const select = document.querySelector<HTMLSelectElement>("#quote-rate-preset-select");
   expect(select).not.toBeNull();
-  return compactText(select!.textContent ?? "");
+  return select!;
+}
+
+function ratePresetActionButton(action: "apply" | "save" | "delete"): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>(`[data-quote-rate-preset-action="${action}"]`);
+  expect(button).not.toBeNull();
+  return button!;
 }
 
 function switchUnits(unitSystem: "imperial" | "metric"): void {

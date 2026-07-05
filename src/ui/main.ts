@@ -542,6 +542,7 @@ function plannedWorkspace(mode: ProcessMode): string {
 
 function quoteWorkspace(): string {
   const input = quoteWorkspaceInput();
+  normalizeSelectedQuoteRatePresetId();
 
   return `
     <section class="input-pane" aria-label="Heat-treat RFQ inputs">
@@ -614,10 +615,6 @@ function quoteWorkspace(): string {
 
 function quoteRatePresetControls(): string {
   const presets = sortedQuoteRatePresets(quoteRatePresetLibrary);
-  const selectedPresetIsValid = presets.some((preset) => preset.id === selectedQuoteRatePresetId);
-  selectedQuoteRatePresetId = selectedPresetIsValid
-    ? selectedQuoteRatePresetId
-    : presets[0]?.id ?? "";
   const hasPresets = presets.length > 0;
   const options = hasPresets
     ? presets
@@ -650,6 +647,14 @@ function quoteRatePresetControls(): string {
       </div>
     </div>
   `;
+}
+
+function normalizeSelectedQuoteRatePresetId(): void {
+  const presets = sortedQuoteRatePresets(quoteRatePresetLibrary);
+  const selectedPresetIsValid = presets.some((preset) => preset.id === selectedQuoteRatePresetId);
+  selectedQuoteRatePresetId = selectedPresetIsValid
+    ? selectedQuoteRatePresetId
+    : presets[0]?.id ?? "";
 }
 
 function quoteWorkspaceInput(): HeatTreatQuoteInput {
@@ -1014,7 +1019,7 @@ function deleteSelectedQuoteRatePreset(): void {
   }
 
   quoteRatePresetLibrary = nextLibrary;
-  selectedQuoteRatePresetId = sortedQuoteRatePresets(nextLibrary)[0]?.id ?? "";
+  normalizeSelectedQuoteRatePresetId();
   renderWorkspace();
   showProjectStatus(`Deleted rate preset "${preset.name}".`);
 }

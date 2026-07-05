@@ -3,8 +3,13 @@ import type { HeatTreatShopRates } from "../src/quote/index.js";
 import {
   QUOTE_RATE_PRESETS_STORAGE_KEY,
   deleteQuoteRatePreset,
+  findQuoteRatePreset,
   loadQuoteRatePresetLibrary,
+  persistQuoteRatePresetLibrary,
   saveQuoteRatePreset,
+  sortedQuoteRatePresets,
+  type QuoteRatePreset,
+  type QuoteRatePresetLibrary,
 } from "../src/ui/quote-rate-presets.js";
 
 class FakeStorage {
@@ -23,6 +28,12 @@ class FakeStorage {
   }
 }
 
+class ThrowingSetStorage extends FakeStorage {
+  override setItem(): void {
+    throw new Error("Storage write failed.");
+  }
+}
+
 const sampleRates: HeatTreatShopRates = {
   minimumLotCharge: 500,
   setupAdminCharge: 100,
@@ -36,6 +47,16 @@ const sampleRates: HeatTreatShopRates = {
   overheadPercent: 18,
   targetMarginPercent: 22,
 };
+
+function makePreset(id: string, name: string): QuoteRatePreset {
+  return {
+    id,
+    name,
+    shopRates: sampleRates,
+    createdAt: "2026-07-05T12:00:00.000Z",
+    updatedAt: "2026-07-05T12:00:00.000Z",
+  };
+}
 
 describe("quote rate presets", () => {
   it("returns an empty library when storage is empty", () => {
@@ -133,6 +154,65 @@ describe("quote rate presets", () => {
       version: 1,
       presets: [],
     });
+  });
+
+  it("persists a validated library to storage", () => {
+    const storage = new FakeStorage();
+    const library: QuoteRatePresetLibrary = {
+      version: 1,
+      presets: [makePreset("preset-2", "Premium RFQ"), makePreset("preset-1", "Standard RFQ")],
+    };
+
+    expect(persistQuoteRatePresetLibrary(library, storage)).toBe(true);
+    expect(JSON.parse(storage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "")).toEqual(library);
+  });
+
+  it("throws validation errors before persisting an invalid library", () => {
+    const storage = new FakeStorage();
+    const invalidLibrary = {
+      version: 1,
+      presets: [
+        {
+          ...makePreset("preset-1", "Invalid RFQ"),
+          shopRates: { ...sampleRates, furnaceRatePerHour: -1 },
+        },
+      ],
+    } as QuoteRatePresetLibrary;
+
+    expect(() => persistQuoteRatePresetLibrary(invalidLibrary, storage)).toThrow(
+      "Invalid shop rate: furnaceRatePerHour.",
+    );
+    expect(storage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY)).toBeNull();
+  });
+
+  it("returns false when storage rejects a persisted library", () => {
+    expect(
+      persistQuoteRatePresetLibrary(
+        { version: 1, presets: [makePreset("preset-1", "Standard RFQ")] },
+        new ThrowingSetStorage(),
+      ),
+    ).toBe(false);
+  });
+
+  it("finds a preset by id", () => {
+    const standard = makePreset("preset-1", "Standard RFQ");
+    const premium = makePreset("preset-2", "Premium RFQ");
+    const library: QuoteRatePresetLibrary = {
+      version: 1,
+      presets: [standard, premium],
+    };
+
+    expect(findQuoteRatePreset(library, "preset-2")).toBe(premium);
+    expect(findQuoteRatePreset(library, "missing")).toBeUndefined();
+  });
+
+  it("returns presets sorted by name", () => {
+    const library: QuoteRatePresetLibrary = {
+      version: 1,
+      presets: [makePreset("preset-1", "Standard RFQ"), makePreset("preset-2", "Premium RFQ")],
+    };
+
+    expect(sortedQuoteRatePresets(library).map((preset) => preset.id)).toEqual(["preset-2", "preset-1"]);
   });
 
   it("rejects invalid shop-rate values when saving or loading", () => {

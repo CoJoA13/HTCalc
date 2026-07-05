@@ -61,8 +61,9 @@ export function persistQuoteRatePresetLibrary(
     return false;
   }
 
+  const serialized = JSON.stringify(parseQuoteRatePresetLibrary(library));
   try {
-    storage.setItem(QUOTE_RATE_PRESETS_STORAGE_KEY, JSON.stringify(parseQuoteRatePresetLibrary(library)));
+    storage.setItem(QUOTE_RATE_PRESETS_STORAGE_KEY, serialized);
     return true;
   } catch {
     return false;
@@ -239,7 +240,7 @@ function sortedPresets(presets: readonly QuoteRatePreset[]): readonly QuoteRateP
 }
 
 function normalizePresetName(name: string): string {
-  return name.trim().toLocaleLowerCase();
+  return name.trim().toLowerCase();
 }
 
 function createPresetId(): string {

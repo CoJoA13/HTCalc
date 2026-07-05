@@ -65,6 +65,9 @@ import {
   type QuoteReportViewModel,
 } from "./quote-report.js";
 import {
+  quotePerWeightDisplay,
+} from "./quote-display.js";
+import {
   defaultHeatTreatQuoteInput,
   setHeatTreatQuoteInputValue,
 } from "./quote-state.js";
@@ -1532,6 +1535,7 @@ function renderQuoteRecommendation(): void {
     const warnings = result.warnings.length > 0
       ? result.warnings
       : ["No active quote warnings for the current input set."];
+    const perWeight = quotePerWeightDisplay(result.pricePerKg, unitSystem);
 
     recommendationPanel.innerHTML = `
       <div class="summary-header">
@@ -1558,7 +1562,11 @@ function renderQuoteRecommendation(): void {
 
       <div class="metric-strip">
         ${metric("Unit Price", formatCurrency(result.unitPrice), "per piece")}
-        ${metric("Price/kg", result.pricePerKg === null ? "Unavailable" : `${formatCurrency(result.pricePerKg)}/kg`, "weight basis")}
+        ${metric(
+          perWeight.label,
+          perWeight.value === null ? "Unavailable" : `${formatCurrency(perWeight.value)}/${perWeight.unit}`,
+          "weight basis",
+        )}
         ${metric("Cycles", result.cycleCount === null ? "Manual" : String(result.cycleCount), "billable")}
         ${metric("Confidence", result.confidence, quoteSourceLabel(result.sourceMode))}
       </div>
@@ -2161,6 +2169,7 @@ function quoteReportHtml(report: QuoteReportViewModel): string {
   const internalNotes = report.recommendation.internalNotes.length > 0
     ? report.recommendation.internalNotes
     : ["No internal quote notes generated."];
+  const perWeight = quotePerWeightDisplay(report.recommendation.pricePerKg, unitSystem);
 
   return `
     <header class="report-document-header">
@@ -2181,7 +2190,7 @@ function quoteReportHtml(report: QuoteReportViewModel): string {
       <dl class="report-scores">
         <div><dt>Lot Price</dt><dd>${formatCurrency(report.recommendation.lotPrice)}</dd></div>
         <div><dt>Unit Price</dt><dd>${formatCurrency(report.recommendation.unitPrice)}</dd></div>
-        <div><dt>Price/kg</dt><dd>${report.recommendation.pricePerKg === null ? "Unavailable" : formatCurrency(report.recommendation.pricePerKg)}</dd></div>
+        <div><dt>${perWeight.label}</dt><dd>${perWeight.value === null ? "Unavailable" : formatCurrency(perWeight.value)}</dd></div>
         <div><dt>Cycles</dt><dd>${report.recommendation.cycleCount ?? "Manual"}</dd></div>
         <div><dt>Confidence</dt><dd>${escapeHtml(report.recommendation.confidence)}</dd></div>
       </dl>

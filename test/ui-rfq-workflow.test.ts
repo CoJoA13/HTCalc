@@ -325,6 +325,95 @@ describe("Heat-Treat RFQ UI workflow", () => {
     const stored = JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}") as QuoteRatePresetLibrary;
     expect(stored.presets.map((preset) => preset.name)).toEqual(["Existing RFQ"]);
   });
+
+  it("renders RFQ inputs as staged accordion sections with accessible defaults", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+
+    expect(quoteAccordionText("source")).toContain("Source & Assumptions");
+    expect(quoteAccordionText("source")).toContain("Manual");
+    expect(quoteAccordionButton("source").getAttribute("aria-expanded")).toBe("true");
+    expect(quoteAccordionPanel("source").hidden).toBe(false);
+
+    expect(quoteAccordionText("lot")).toContain("Lot & Capacity");
+    expect(quoteAccordionText("lot")).toContain("6 fields");
+    expect(quoteAccordionButton("lot").getAttribute("aria-expanded")).toBe("true");
+    expect(quoteAccordionPanel("lot").hidden).toBe(false);
+
+    expect(quoteAccordionText("rates")).toContain("Shop Rates");
+    expect(quoteAccordionText("rates")).toContain("No preset");
+    expect(quoteAccordionButton("rates").getAttribute("aria-expanded")).toBe("true");
+    expect(quoteAccordionPanel("rates").hidden).toBe(false);
+
+    expect(quoteAccordionText("adjustments")).toContain("Overrides & Adjustments");
+    expect(quoteAccordionText("adjustments")).toContain("Optional");
+    expect(quoteAccordionButton("adjustments").getAttribute("aria-expanded")).toBe("false");
+    expect(quoteAccordionPanel("adjustments").hidden).toBe(true);
+
+    expect(quoteAccordionText("review")).toContain("Review & Export Readiness");
+    expect(quoteAccordionPanel("review").hidden).toBe(false);
+    expect(quoteReviewReadinessText()).toContain("Heat-treatment service pricing only");
+  });
+
+  it("toggles RFQ override staging without losing entered quote values", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+
+    quoteAccordionButton("adjustments").click();
+    expect(quoteAccordionPanel("adjustments").hidden).toBe(false);
+
+    setQuoteNumber("manualOverrides.billableFurnaceHours", "2.5");
+    setQuoteNumber("adjustments.manualAdderDiscount", "-25");
+    expect(quoteAccordionText("adjustments")).toContain("Overrides active");
+
+    quoteAccordionButton("adjustments").click();
+    expect(quoteAccordionPanel("adjustments").hidden).toBe(true);
+    expect(quoteControl<HTMLInputElement>("manualOverrides.billableFurnaceHours").value).toBe("2.5");
+    expect(quoteControl<HTMLInputElement>("adjustments.manualAdderDiscount").value).toBe("-25");
+
+    quoteAccordionButton("adjustments").click();
+    expect(quoteAccordionPanel("adjustments").hidden).toBe(false);
+    expect(quoteControl<HTMLInputElement>("manualOverrides.billableFurnaceHours").value).toBe("2.5");
+    expect(quoteControl<HTMLInputElement>("adjustments.manualAdderDiscount").value).toBe("-25");
+  });
+
+  it("updates RFQ review readiness while preserving rate preset workflows", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Staged RFQ");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("lot.quantity", "30");
+    setQuoteNumber("lot.totalWeightKg", "150");
+    setQuoteNumber("lot.loadCapacityKg", "75");
+    setQuoteNumber("lot.laborHoursPerLoad", "0.75");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.setupAdminCharge", "100");
+    setQuoteNumber("shopRates.laborRatePerHour", "90");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    setQuoteNumber("shopRates.bathQuenchRatePerHour", "95");
+    setQuoteNumber("shopRates.temperFurnaceRatePerHour", "80");
+    setQuoteNumber("shopRates.inspectionBaseCharge", "60");
+    setQuoteNumber("shopRates.consumablesPerKg", "0.55");
+    setQuoteNumber("shopRates.handlingPackagingCharge", "30");
+    setQuoteNumber("shopRates.overheadPercent", "18");
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    expect(quoteReviewReadinessText()).toContain("Manual heat-treatment quote");
+    expect(quoteReviewReadinessText()).toContain("Warnings");
+    expect(quoteReviewReadinessText()).toContain("Open checks");
+
+    clickRatePresetAction("save");
+    expect(quoteAccordionText("rates")).toContain("Staged RFQ");
+
+    setQuoteNumber("shopRates.furnaceRatePerHour", "5");
+    clickRatePresetAction("apply");
+
+    expect(quoteControl<HTMLInputElement>("shopRates.furnaceRatePerHour").value).toBe("125");
+    expect(quoteReviewReadinessText()).toContain("Staged RFQ");
+    expect(recommendationText()).toContain("Heat-Treat RFQ");
+  });
 });
 
 function clickMode(modeId: string): void {
@@ -343,6 +432,30 @@ function setQuoteNumber(path: string, value: string): void {
   const input = quoteControl<HTMLInputElement>(path);
   input.value = value;
   input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+type QuoteAccordionSection = "source" | "lot" | "rates" | "adjustments" | "review";
+
+function quoteAccordionButton(section: QuoteAccordionSection): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>(`[data-quote-accordion-toggle="${section}"]`);
+  expect(button).not.toBeNull();
+  return button!;
+}
+
+function quoteAccordionPanel(section: QuoteAccordionSection): HTMLDivElement {
+  const panel = document.querySelector<HTMLDivElement>(`[data-quote-accordion-panel="${section}"]`);
+  expect(panel).not.toBeNull();
+  return panel!;
+}
+
+function quoteAccordionText(section: QuoteAccordionSection): string {
+  const container = document.querySelector<HTMLElement>(`[data-quote-accordion-section="${section}"]`);
+  expect(container).not.toBeNull();
+  return compactText(container!.textContent ?? "");
+}
+
+function quoteReviewReadinessText(): string {
+  return compactText(document.querySelector("[data-quote-review-readiness]")?.textContent ?? "");
 }
 
 type RatePresetAction = "apply" | "save" | "import" | "export" | "delete";

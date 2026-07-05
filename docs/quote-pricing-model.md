@@ -20,6 +20,8 @@ Imported recipes contribute process label, nominal time windows, confidence, war
 
 The RFQ workspace can save shop-rate presets in the current browser. Presets store only the section `3. Shop Rates` values: lot minimums, setup/admin, labor, furnace, bath/quench, temper, inspection, consumables, handling/packaging, overhead, and margin.
 
+Preset export downloads the browser-local preset library as JSON. Preset import accepts that JSON format and merges it into the current browser library. Imported presets with matching names overwrite local preset rates case-insensitively while preserving the local preset identity; new names are added.
+
 Project files save the applied shop rates through `heatTreatQuote.input.shopRates`. A project opened on another machine restores the rates used for that quote even when that browser has a different preset library.
 
 ## Pricing Method

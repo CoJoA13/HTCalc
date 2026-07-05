@@ -4,6 +4,7 @@ All notable project changes are summarized here.
 
 ## Unreleased
 
+- Added RFQ preset import/export, clearer preset action statuses, and unit-system-aware RFQ Markdown total weight.
 - Added browser-local Heat-Treat RFQ shop-rate presets with project-file preservation of applied rates.
 - Added browser-like Heat-Treat RFQ workflow coverage and imperial `$/lb` per-weight quote display.
 - Added Heat-Treat RFQ pricing design and implementation for recipe-imported heat-treatment service estimates.

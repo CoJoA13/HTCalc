@@ -16,6 +16,12 @@ The RFQ mode can import process assumptions from:
 
 Imported recipes contribute process label, nominal time windows, confidence, warnings, and validation burden hints. The RFQ mode owns price, margin, overhead, manual overrides, and customer-facing quote values.
 
+## Shop Rate Presets
+
+The RFQ workspace can save shop-rate presets in the current browser. Presets store only the section `3. Shop Rates` values: lot minimums, setup/admin, labor, furnace, bath/quench, temper, inspection, consumables, handling/packaging, overhead, and margin.
+
+Project files save the applied shop rates through `heatTreatQuote.input.shopRates`. A project opened on another machine restores the rates used for that quote even when that browser has a different preset library.
+
 ## Pricing Method
 
 The model calculates shop cost first:

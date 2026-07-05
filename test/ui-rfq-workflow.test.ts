@@ -49,6 +49,7 @@ describe("Heat-Treat RFQ UI workflow", () => {
       value: vi.fn(),
     });
 
+    vi.spyOn(window, "prompt").mockReturnValue("Legacy RFQ");
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
       clickedDownloadNames.push(this.download);
       return undefined;
@@ -143,7 +144,7 @@ describe("Heat-Treat RFQ UI workflow", () => {
 
   it("saves, applies, and preserves RFQ shop-rate presets through project files", async () => {
     const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Standard RFQ");
-    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmSpy = vi.spyOn(window, "confirm");
     await import("../src/ui/main.js");
 
     clickMode("heat-treat-rfq");
@@ -163,9 +164,11 @@ describe("Heat-Treat RFQ UI workflow", () => {
     setQuoteNumber("shopRates.overheadPercent", "18");
     setQuoteNumber("shopRates.targetMarginPercent", "22");
 
-    clickRatePresetAction("save");
+    saveRatePreset("Standard RFQ");
 
-    expect(promptSpy).toHaveBeenCalledOnce();
+    expect(promptSpy).not.toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(quotePresetDialog().hidden).toBe(true);
     expect(ratePresetSelectText()).toContain("Standard RFQ");
 
     setQuoteNumber("shopRates.minimumLotCharge", "50");
@@ -227,7 +230,6 @@ describe("Heat-Treat RFQ UI workflow", () => {
   });
 
   it("shows custom RFQ rates when current shop rates differ from the selected preset", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("Dirty RFQ");
     await import("../src/ui/main.js");
 
     clickMode("heat-treat-rfq");
@@ -243,7 +245,7 @@ describe("Heat-Treat RFQ UI workflow", () => {
     setQuoteNumber("shopRates.overheadPercent", "18");
     setQuoteNumber("shopRates.targetMarginPercent", "22");
 
-    clickRatePresetAction("save");
+    saveRatePreset("Dirty RFQ");
     clickRatePresetAction("apply");
 
     expect(quoteAccordionStatusText("rates")).toContain("Dirty RFQ");
@@ -289,9 +291,6 @@ describe("Heat-Treat RFQ UI workflow", () => {
   });
 
   it("refreshes RFQ rate status when selecting a non-matching preset without applying it", async () => {
-    vi.spyOn(window, "prompt")
-      .mockReturnValueOnce("Preset A")
-      .mockReturnValueOnce("Preset B");
     await import("../src/ui/main.js");
 
     clickMode("heat-treat-rfq");
@@ -307,9 +306,9 @@ describe("Heat-Treat RFQ UI workflow", () => {
     setQuoteNumber("shopRates.overheadPercent", "18");
     setQuoteNumber("shopRates.targetMarginPercent", "22");
 
-    clickRatePresetAction("save");
+    saveRatePreset("Preset A");
     setQuoteNumber("shopRates.furnaceRatePerHour", "130");
-    clickRatePresetAction("save");
+    saveRatePreset("Preset B");
 
     expect(quoteAccordionStatusText("rates")).toContain("Preset B");
     expect(quoteReviewReadinessText()).toContain("Preset B");
@@ -385,24 +384,29 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(quoteReportActionButton("open").disabled).toBe(false);
   });
 
-  it("deletes RFQ shop-rate presets without changing current quote rates", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("Delete Me RFQ");
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("deletes RFQ shop-rate presets through an app-native confirmation", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
     await import("../src/ui/main.js");
 
     clickMode("heat-treat-rfq");
     setQuoteNumber("shopRates.minimumLotCharge", "500");
     setQuoteNumber("shopRates.furnaceRatePerHour", "125");
-
-    clickRatePresetAction("save");
+    saveRatePreset("Delete Me RFQ");
     expect(ratePresetSelectText()).toContain("Delete Me RFQ");
 
     setQuoteNumber("shopRates.minimumLotCharge", "50");
     setQuoteNumber("shopRates.furnaceRatePerHour", "1");
+    openDeleteRatePresetDialog();
 
-    clickRatePresetAction("delete");
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(quotePresetDialogText()).toContain('Delete "Delete Me RFQ" from saved RFQ presets.');
+    expect(quotePresetDialogText()).toContain("Current quote rates will not change.");
+    expect(quotePresetDialogAction("confirm").textContent).toContain("Delete Preset");
 
-    expect(confirmSpy).toHaveBeenCalledOnce();
+    quotePresetDialogAction("confirm").click();
+
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(quotePresetDialog().hidden).toBe(true);
     expect(quoteControl<HTMLInputElement>("shopRates.minimumLotCharge").value).toBe("50");
     expect(quoteControl<HTMLInputElement>("shopRates.furnaceRatePerHour").value).toBe("1");
     expect(ratePresetSelectText()).toContain("No saved presets");
@@ -412,26 +416,119 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}").presets).toEqual([]);
   });
 
-  it("requires a name before saving RFQ shop-rate presets", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("   ");
-    await import("../src/ui/main.js");
-
-    clickMode("heat-treat-rfq");
-    clickRatePresetAction("save");
-
-    expect(projectStatusText()).toBe("Preset name is required. No rates were saved.");
-    expect(ratePresetSelectText()).toContain("No saved presets");
-    expect(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY)).toBeNull();
-  });
-
-  it("exports RFQ shop-rate presets as a preset library JSON file", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("Exported RFQ");
+  it("cancels RFQ preset delete dialog without mutating presets", async () => {
     await import("../src/ui/main.js");
 
     clickMode("heat-treat-rfq");
     setQuoteNumber("shopRates.minimumLotCharge", "500");
     setQuoteNumber("shopRates.furnaceRatePerHour", "125");
-    clickRatePresetAction("save");
+    saveRatePreset("Keep RFQ");
+
+    openDeleteRatePresetDialog();
+    quotePresetDialogAction("cancel").click();
+
+    expect(quotePresetDialog().hidden).toBe(true);
+    expect(ratePresetSelectText()).toContain("Keep RFQ");
+    const stored = JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}") as QuoteRatePresetLibrary;
+    expect(stored.presets).toHaveLength(1);
+    expect(stored.presets[0]?.name).toBe("Keep RFQ");
+  });
+
+  it("closes RFQ preset dialogs with Escape and backdrop without mutating presets", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    openSaveRatePresetDialog();
+    quotePresetDialogInput().value = "Escape RFQ";
+    quotePresetDialogInput().dispatchEvent(new Event("input", { bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+
+    expect(quotePresetDialog().hidden).toBe(true);
+    expect(ratePresetSelectText()).toContain("No saved presets");
+    expect(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY)).toBeNull();
+
+    saveRatePreset("Backdrop RFQ");
+    openDeleteRatePresetDialog();
+    quotePresetDialog().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+
+    expect(quotePresetDialog().hidden).toBe(true);
+    expect(ratePresetSelectText()).toContain("Backdrop RFQ");
+    const stored = JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}") as QuoteRatePresetLibrary;
+    expect(stored.presets).toHaveLength(1);
+  });
+
+  it("validates RFQ preset names inside the save dialog without calling prompt", async () => {
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Dialog RFQ");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    openSaveRatePresetDialog();
+
+    expect(promptSpy).not.toHaveBeenCalled();
+    expect(quotePresetDialogInput().value).toBe("");
+    expect(quotePresetDialogAction("confirm").textContent).toContain("Save Preset");
+
+    const input = quotePresetDialogInput();
+    input.value = "   ";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    quotePresetDialogAction("confirm").click();
+
+    expect(quotePresetDialog().hidden).toBe(false);
+    expect(quotePresetDialogMessage()).toBe("Preset name is required.");
+    expect(quotePresetDialogInput().getAttribute("aria-invalid")).toBe("true");
+    expect(ratePresetSelectText()).toContain("No saved presets");
+    expect(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY)).toBeNull();
+    expect(promptSpy).not.toHaveBeenCalled();
+
+    input.value = "Dialog RFQ";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    quotePresetDialogAction("confirm").click();
+
+    expect(quotePresetDialog().hidden).toBe(true);
+    expect(ratePresetSelectText()).toContain("Dialog RFQ");
+    expect(projectStatusText()).toBe('Saved rate preset "Dialog RFQ".');
+    expect(promptSpy).not.toHaveBeenCalled();
+  });
+
+  it("updates existing RFQ presets from the save dialog without creating duplicates", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("shopRates.minimumLotCharge", "300");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "90");
+    saveRatePreset("Existing RFQ");
+
+    setQuoteNumber("shopRates.minimumLotCharge", "725");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "155");
+    openSaveRatePresetDialog();
+
+    expect(quotePresetDialogInput().value).toBe("Existing RFQ");
+    expect(quotePresetDialogText()).toContain("This will update the existing preset.");
+    expect(quotePresetDialogAction("confirm").textContent).toContain("Update Preset");
+
+    const input = quotePresetDialogInput();
+    input.value = " existing rfq ";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(quotePresetDialogText()).toContain("This will update the existing preset.");
+    expect(quotePresetDialogAction("confirm").textContent).toContain("Update Preset");
+
+    quotePresetDialogAction("confirm").click();
+
+    const stored = JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}") as QuoteRatePresetLibrary;
+    expect(stored.presets).toHaveLength(1);
+    expect(stored.presets[0]?.name).toBe("existing rfq");
+    expect(stored.presets[0]?.shopRates.minimumLotCharge).toBe(725);
+    expect(stored.presets[0]?.shopRates.furnaceRatePerHour).toBe(155);
+    expect(ratePresetSelectText()).toContain("existing rfq");
+  });
+
+  it("exports RFQ shop-rate presets as a preset library JSON file", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    saveRatePreset("Exported RFQ");
     clickRatePresetAction("export");
 
     expect(clickedDownloadNames.at(-1)).toMatch(/^htcalc-rfq-rate-presets-\d{4}-\d{2}-\d{2}\.json$/);
@@ -451,7 +548,6 @@ describe("Heat-Treat RFQ UI workflow", () => {
   });
 
   it("cleans up RFQ preset export downloads when the browser click fails", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("Blocked Export RFQ");
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
       clickedDownloadNames.push(this.download);
       throw new Error("Download blocked");
@@ -459,7 +555,7 @@ describe("Heat-Treat RFQ UI workflow", () => {
     await import("../src/ui/main.js");
 
     clickMode("heat-treat-rfq");
-    clickRatePresetAction("save");
+    saveRatePreset("Blocked Export RFQ");
     clickRatePresetAction("export");
 
     expect(projectStatusText()).toBe("Could not export presets. Try again or check browser download permissions.");
@@ -480,13 +576,12 @@ describe("Heat-Treat RFQ UI workflow", () => {
   });
 
   it("merges imported RFQ shop-rate presets by name", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("Merge RFQ");
     await import("../src/ui/main.js");
 
     clickMode("heat-treat-rfq");
     setQuoteNumber("shopRates.minimumLotCharge", "300");
     setQuoteNumber("shopRates.furnaceRatePerHour", "90");
-    clickRatePresetAction("save");
+    saveRatePreset("Merge RFQ");
 
     await importRatePresetFile(presetLibraryJson(" merge rfq ", {
       minimumLotCharge: 850,
@@ -503,11 +598,10 @@ describe("Heat-Treat RFQ UI workflow", () => {
   });
 
   it("rejects invalid RFQ preset import files without changing existing presets", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("Existing RFQ");
     await import("../src/ui/main.js");
 
     clickMode("heat-treat-rfq");
-    clickRatePresetAction("save");
+    saveRatePreset("Existing RFQ");
     await importRatePresetFile("{");
 
     expect(projectStatusText()).toBe("Could not import presets. Choose a valid HTCalc RFQ preset file.");
@@ -571,7 +665,6 @@ describe("Heat-Treat RFQ UI workflow", () => {
   });
 
   it("updates RFQ review readiness while preserving rate preset workflows", async () => {
-    vi.spyOn(window, "prompt").mockReturnValue("Staged RFQ");
     await import("../src/ui/main.js");
 
     clickMode("heat-treat-rfq");
@@ -595,7 +688,7 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(quoteReviewReadinessText()).toContain("Warnings");
     expect(quoteReviewReadinessText()).toContain("Open checks");
 
-    clickRatePresetAction("save");
+    saveRatePreset("Staged RFQ");
     expect(quoteAccordionText("rates")).toContain("Staged RFQ");
 
     setQuoteNumber("shopRates.furnaceRatePerHour", "5");
@@ -701,6 +794,56 @@ type RatePresetAction = "apply" | "save" | "import" | "export" | "delete";
 
 function clickRatePresetAction(action: RatePresetAction): void {
   ratePresetActionButton(action).click();
+}
+
+type QuotePresetDialogAction = "confirm" | "cancel";
+
+function quotePresetDialog(): HTMLElement {
+  const dialog = document.querySelector<HTMLElement>("[data-quote-rate-preset-dialog]");
+  expect(dialog).not.toBeNull();
+  return dialog!;
+}
+
+function quotePresetDialogText(): string {
+  return compactText(quotePresetDialog().textContent ?? "");
+}
+
+function quotePresetDialogInput(): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>("[data-quote-rate-preset-dialog-name]");
+  expect(input).not.toBeNull();
+  return input!;
+}
+
+function quotePresetDialogMessage(): string {
+  const message = document.querySelector<HTMLElement>("[data-quote-rate-preset-dialog-message]");
+  expect(message).not.toBeNull();
+  return message!.hidden ? "" : compactText(message!.textContent ?? "");
+}
+
+function quotePresetDialogAction(action: QuotePresetDialogAction): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>(`[data-quote-rate-preset-dialog-action="${action}"]`);
+  expect(button).not.toBeNull();
+  return button!;
+}
+
+function openSaveRatePresetDialog(): void {
+  clickRatePresetAction("save");
+  expect(quotePresetDialog().hidden).toBe(false);
+  expect(quotePresetDialogText()).toContain("Save Rate Preset");
+}
+
+function saveRatePreset(name: string): void {
+  openSaveRatePresetDialog();
+  const input = quotePresetDialogInput();
+  input.value = name;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  quotePresetDialogAction("confirm").click();
+}
+
+function openDeleteRatePresetDialog(): void {
+  clickRatePresetAction("delete");
+  expect(quotePresetDialog().hidden).toBe(false);
+  expect(quotePresetDialogText()).toContain("Delete Rate Preset");
 }
 
 function ratePresetSelectText(): string {

@@ -260,6 +260,23 @@ describe("Heat-Treat RFQ UI workflow", () => {
     });
   });
 
+  it("cleans up RFQ preset export downloads when the browser click fails", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Blocked Export RFQ");
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clickedDownloadNames.push(this.download);
+      throw new Error("Download blocked");
+    });
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    clickRatePresetAction("save");
+    clickRatePresetAction("export");
+
+    expect(projectStatusText()).toBe("Could not export presets. Try again or check browser download permissions.");
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:htcalc-1");
+    expect(document.querySelector('a[download^="htcalc-rfq-rate-presets-"]')).toBeNull();
+  });
+
   it("imports RFQ shop-rate presets into an empty local library", async () => {
     await import("../src/ui/main.js");
 

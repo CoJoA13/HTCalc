@@ -1040,12 +1040,15 @@ function exportQuoteRatePresets(): void {
     });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
-    link.download = quoteRatePresetExportFilename();
-    document.body.append(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    try {
+      link.href = url;
+      link.download = quoteRatePresetExportFilename();
+      document.body.append(link);
+      link.click();
+    } finally {
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
     showProjectStatus(`Exported ${quoteRatePresetLibrary.presets.length} rate preset${quoteRatePresetLibrary.presets.length === 1 ? "" : "s"}.`);
   } catch {
     showProjectStatus("Could not export presets. Try again or check browser download permissions.", true);

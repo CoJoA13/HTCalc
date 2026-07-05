@@ -195,6 +195,102 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(recommendationText()).toContain("Heat-Treat RFQ");
   });
 
+  it("shows custom RFQ rates when current shop rates differ from the selected preset", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Dirty RFQ");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.setupAdminCharge", "100");
+    setQuoteNumber("shopRates.laborRatePerHour", "90");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    setQuoteNumber("shopRates.bathQuenchRatePerHour", "95");
+    setQuoteNumber("shopRates.temperFurnaceRatePerHour", "80");
+    setQuoteNumber("shopRates.inspectionBaseCharge", "60");
+    setQuoteNumber("shopRates.consumablesPerKg", "0.55");
+    setQuoteNumber("shopRates.handlingPackagingCharge", "30");
+    setQuoteNumber("shopRates.overheadPercent", "18");
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    clickRatePresetAction("save");
+    clickRatePresetAction("apply");
+
+    expect(quoteAccordionStatusText("rates")).toContain("Dirty RFQ");
+    expect(quoteReviewReadinessText()).toContain("Dirty RFQ");
+
+    setQuoteNumber("shopRates.furnaceRatePerHour", "130");
+
+    expect(quoteAccordionStatusText("rates")).not.toContain("Dirty RFQ");
+    expect(quoteAccordionStatusText("rates")).toContain("Custom rates");
+    expect(quoteReviewReadinessText()).not.toContain("Dirty RFQ");
+    expect(quoteReviewReadinessText()).toContain("Custom rates");
+  });
+
+  it("refreshes RFQ review open checks when validation checklist items change", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("lot.quantity", "30");
+    setQuoteNumber("lot.totalWeightKg", "150");
+    setQuoteNumber("lot.loadCapacityKg", "75");
+    setQuoteNumber("lot.laborHoursPerLoad", "0.75");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.setupAdminCharge", "100");
+    setQuoteNumber("shopRates.laborRatePerHour", "90");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    setQuoteNumber("shopRates.bathQuenchRatePerHour", "95");
+    setQuoteNumber("shopRates.temperFurnaceRatePerHour", "80");
+    setQuoteNumber("shopRates.inspectionBaseCharge", "60");
+    setQuoteNumber("shopRates.consumablesPerKg", "0.55");
+    setQuoteNumber("shopRates.handlingPackagingCharge", "30");
+    setQuoteNumber("shopRates.overheadPercent", "18");
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    const openCheckCount = uncheckedValidationChecklistChecks().length;
+    expect(openCheckCount).toBeGreaterThan(0);
+    expect(quoteReviewReadinessText()).toContain(`Open checks ${openCheckCount}`);
+
+    const firstOpenCheck = uncheckedValidationChecklistChecks()[0]!;
+    firstOpenCheck.checked = true;
+    firstOpenCheck.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(quoteReviewReadinessText()).toContain(`Open checks ${openCheckCount - 1}`);
+  });
+
+  it("refreshes RFQ rate status when selecting a non-matching preset without applying it", async () => {
+    vi.spyOn(window, "prompt")
+      .mockReturnValueOnce("Preset A")
+      .mockReturnValueOnce("Preset B");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.setupAdminCharge", "100");
+    setQuoteNumber("shopRates.laborRatePerHour", "90");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    setQuoteNumber("shopRates.bathQuenchRatePerHour", "95");
+    setQuoteNumber("shopRates.temperFurnaceRatePerHour", "80");
+    setQuoteNumber("shopRates.inspectionBaseCharge", "60");
+    setQuoteNumber("shopRates.consumablesPerKg", "0.55");
+    setQuoteNumber("shopRates.handlingPackagingCharge", "30");
+    setQuoteNumber("shopRates.overheadPercent", "18");
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    clickRatePresetAction("save");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "130");
+    clickRatePresetAction("save");
+
+    expect(quoteAccordionStatusText("rates")).toContain("Preset B");
+    expect(quoteReviewReadinessText()).toContain("Preset B");
+
+    selectRatePresetByName("Preset A");
+
+    expect(quoteAccordionStatusText("rates")).toContain("Custom rates");
+    expect(quoteAccordionStatusText("rates")).not.toContain("Preset B");
+    expect(quoteReviewReadinessText()).toContain("Custom rates");
+    expect(quoteReviewReadinessText()).not.toContain("Preset B");
+  });
+
   it("deletes RFQ shop-rate presets without changing current quote rates", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("Delete Me RFQ");
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -325,6 +421,95 @@ describe("Heat-Treat RFQ UI workflow", () => {
     const stored = JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}") as QuoteRatePresetLibrary;
     expect(stored.presets.map((preset) => preset.name)).toEqual(["Existing RFQ"]);
   });
+
+  it("renders RFQ inputs as staged accordion sections with accessible defaults", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+
+    expect(quoteAccordionText("source")).toContain("Source & Assumptions");
+    expect(quoteAccordionText("source")).toContain("Manual");
+    expect(quoteAccordionButton("source").getAttribute("aria-expanded")).toBe("true");
+    expect(quoteAccordionPanel("source").hidden).toBe(false);
+
+    expect(quoteAccordionText("lot")).toContain("Lot & Capacity");
+    expect(quoteAccordionText("lot")).toContain("6 fields");
+    expect(quoteAccordionButton("lot").getAttribute("aria-expanded")).toBe("true");
+    expect(quoteAccordionPanel("lot").hidden).toBe(false);
+
+    expect(quoteAccordionText("rates")).toContain("Shop Rates");
+    expect(quoteAccordionText("rates")).toContain("No preset");
+    expect(quoteAccordionButton("rates").getAttribute("aria-expanded")).toBe("true");
+    expect(quoteAccordionPanel("rates").hidden).toBe(false);
+
+    expect(quoteAccordionText("adjustments")).toContain("Overrides & Adjustments");
+    expect(quoteAccordionText("adjustments")).toContain("Optional");
+    expect(quoteAccordionButton("adjustments").getAttribute("aria-expanded")).toBe("false");
+    expect(quoteAccordionPanel("adjustments").hidden).toBe(true);
+
+    expect(quoteAccordionText("review")).toContain("Review & Export Readiness");
+    expect(quoteAccordionPanel("review").hidden).toBe(false);
+    expect(quoteReviewReadinessText()).toContain("Heat-treatment service pricing only");
+  });
+
+  it("toggles RFQ override staging without losing entered quote values", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+
+    quoteAccordionButton("adjustments").click();
+    expect(quoteAccordionPanel("adjustments").hidden).toBe(false);
+
+    setQuoteNumber("manualOverrides.billableFurnaceHours", "2.5");
+    setQuoteNumber("adjustments.manualAdderDiscount", "-25");
+    expect(quoteAccordionText("adjustments")).toContain("Overrides active");
+
+    quoteAccordionButton("adjustments").click();
+    expect(quoteAccordionPanel("adjustments").hidden).toBe(true);
+    expect(quoteControl<HTMLInputElement>("manualOverrides.billableFurnaceHours").value).toBe("2.5");
+    expect(quoteControl<HTMLInputElement>("adjustments.manualAdderDiscount").value).toBe("-25");
+
+    quoteAccordionButton("adjustments").click();
+    expect(quoteAccordionPanel("adjustments").hidden).toBe(false);
+    expect(quoteControl<HTMLInputElement>("manualOverrides.billableFurnaceHours").value).toBe("2.5");
+    expect(quoteControl<HTMLInputElement>("adjustments.manualAdderDiscount").value).toBe("-25");
+  });
+
+  it("updates RFQ review readiness while preserving rate preset workflows", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Staged RFQ");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("lot.quantity", "30");
+    setQuoteNumber("lot.totalWeightKg", "150");
+    setQuoteNumber("lot.loadCapacityKg", "75");
+    setQuoteNumber("lot.laborHoursPerLoad", "0.75");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.setupAdminCharge", "100");
+    setQuoteNumber("shopRates.laborRatePerHour", "90");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    setQuoteNumber("shopRates.bathQuenchRatePerHour", "95");
+    setQuoteNumber("shopRates.temperFurnaceRatePerHour", "80");
+    setQuoteNumber("shopRates.inspectionBaseCharge", "60");
+    setQuoteNumber("shopRates.consumablesPerKg", "0.55");
+    setQuoteNumber("shopRates.handlingPackagingCharge", "30");
+    setQuoteNumber("shopRates.overheadPercent", "18");
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    expect(quoteReviewReadinessText()).toContain("Manual heat-treatment quote");
+    expect(quoteReviewReadinessText()).toContain("Warnings");
+    expect(quoteReviewReadinessText()).toContain("Open checks");
+
+    clickRatePresetAction("save");
+    expect(quoteAccordionText("rates")).toContain("Staged RFQ");
+
+    setQuoteNumber("shopRates.furnaceRatePerHour", "5");
+    clickRatePresetAction("apply");
+
+    expect(quoteControl<HTMLInputElement>("shopRates.furnaceRatePerHour").value).toBe("125");
+    expect(quoteReviewReadinessText()).toContain("Staged RFQ");
+    expect(recommendationText()).toContain("Heat-Treat RFQ");
+  });
 });
 
 function clickMode(modeId: string): void {
@@ -345,6 +530,40 @@ function setQuoteNumber(path: string, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+type QuoteAccordionSection = "source" | "lot" | "rates" | "adjustments" | "review";
+
+function quoteAccordionButton(section: QuoteAccordionSection): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>(`[data-quote-accordion-toggle="${section}"]`);
+  expect(button).not.toBeNull();
+  return button!;
+}
+
+function quoteAccordionPanel(section: QuoteAccordionSection): HTMLDivElement {
+  const panel = document.querySelector<HTMLDivElement>(`[data-quote-accordion-panel="${section}"]`);
+  expect(panel).not.toBeNull();
+  return panel!;
+}
+
+function quoteAccordionText(section: QuoteAccordionSection): string {
+  const container = document.querySelector<HTMLElement>(`[data-quote-accordion-section="${section}"]`);
+  expect(container).not.toBeNull();
+  return compactText(container!.textContent ?? "");
+}
+
+function quoteAccordionStatusText(section: QuoteAccordionSection): string {
+  const status = document.querySelector<HTMLElement>(`[data-quote-accordion-status="${section}"]`);
+  expect(status).not.toBeNull();
+  return compactText(status!.textContent ?? "");
+}
+
+function quoteReviewReadinessText(): string {
+  const readiness = document.querySelector("[data-quote-review-readiness]");
+  return compactText(Array
+    .from(readiness?.querySelectorAll("dt, dd, .quote-review-note") ?? [])
+    .map((element) => element.textContent ?? "")
+    .join(" "));
+}
+
 type RatePresetAction = "apply" | "save" | "import" | "export" | "delete";
 
 function clickRatePresetAction(action: RatePresetAction): void {
@@ -359,6 +578,20 @@ function ratePresetSelect(): HTMLSelectElement {
   const select = document.querySelector<HTMLSelectElement>("#quote-rate-preset-select");
   expect(select).not.toBeNull();
   return select!;
+}
+
+function selectRatePresetByName(name: string): void {
+  const select = ratePresetSelect();
+  const option = Array.from(select.options).find((item) => item.textContent === name);
+  expect(option).not.toBeUndefined();
+  select.value = option!.value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function uncheckedValidationChecklistChecks(): HTMLInputElement[] {
+  return Array
+    .from(document.querySelectorAll<HTMLInputElement>("[data-checklist-check]"))
+    .filter((control) => !control.checked);
 }
 
 function projectStatusText(): string {

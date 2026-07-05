@@ -311,6 +311,28 @@ let martemperingState: MartemperingInput = defaultMartemperingInput();
 let heatTreatQuoteState: HeatTreatQuoteInput = defaultHeatTreatQuoteInput();
 let quoteRatePresetLibrary: QuoteRatePresetLibrary = loadQuoteRatePresetLibrary();
 let selectedQuoteRatePresetId = "";
+
+type QuoteAccordionSectionId = "source" | "lot" | "rates" | "adjustments" | "review";
+
+const quoteAccordionSectionMeta: Record<QuoteAccordionSectionId, {
+  readonly title: string;
+  readonly icon: string;
+}> = {
+  source: { title: "Source & Assumptions", icon: "ph-git-branch" },
+  lot: { title: "Lot & Capacity", icon: "ph-package" },
+  rates: { title: "Shop Rates", icon: "ph-currency-dollar" },
+  adjustments: { title: "Overrides & Adjustments", icon: "ph-sliders" },
+  review: { title: "Review & Export Readiness", icon: "ph-clipboard-text" },
+};
+
+let quoteAccordionOpenState: Record<QuoteAccordionSectionId, boolean> = {
+  source: true,
+  lot: true,
+  rates: true,
+  adjustments: false,
+  review: true,
+};
+
 let manualQuoteProcessSummary = heatTreatQuoteState.processSummary;
 let manualQuoteImportedProcess: ImportedProcessAssumptions = structuredClone(heatTreatQuoteState.importedProcess);
 let calibration: AdiModelCalibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
@@ -547,67 +569,87 @@ function plannedWorkspace(mode: ProcessMode): string {
 function quoteWorkspace(): string {
   const input = quoteWorkspaceInput();
   normalizeSelectedQuoteRatePresetId();
+  const selectedPreset = selectedQuoteRatePreset();
+  const activePreset = activeQuoteRatePreset(input);
+  const readiness = quoteReviewReadiness(input, activePreset);
+  const statuses = quoteAccordionStatusMap(input, selectedPreset, activePreset, readiness);
 
   return `
     <section class="input-pane" aria-label="Heat-treat RFQ inputs">
       ${projectDetailsSection()}
 
-      <div class="section-block">
-        <div class="section-heading"><i class="ph ph-git-branch"></i><span>1. Quote Source</span></div>
-        <div class="field-grid target-grid">
-          ${quoteSelectField("sourceMode", "Source", [
-            ["adi", "Use current ADI recipe"],
-            ["steel-austempering", "Use current Steel Austempering recipe"],
-            ["martempering", "Use current Martempering recipe"],
-            ["manual", "Manual quote"],
-          ], input.sourceMode)}
-          ${quoteTextField("processSummary", "Process Summary", input.processSummary, input.sourceMode !== "manual")}
-        </div>
-      </div>
+      <div class="quote-accordion-stack">
+        ${quoteAccordionSection("source", statuses.source, `
+          <div class="field-grid target-grid">
+            ${quoteSelectField("sourceMode", "Source", [
+              ["adi", "Use current ADI recipe"],
+              ["steel-austempering", "Use current Steel Austempering recipe"],
+              ["martempering", "Use current Martempering recipe"],
+              ["manual", "Manual quote"],
+            ], input.sourceMode)}
+            ${quoteTextField("processSummary", "Process Summary", input.processSummary, input.sourceMode !== "manual")}
+          </div>
+          ${quoteImportedAssumptionsSummary(input)}
+        `)}
 
-      <div class="section-block">
-        <div class="section-heading"><i class="ph ph-package"></i><span>2. Lot</span></div>
-        <div class="field-grid geometry-grid">
-          ${quoteNumberField("lot.quantity", "Quantity", input.lot.quantity, "1", "pcs")}
-          ${quoteNumberField("lot.pieceWeightKg", "Piece Weight", input.lot.pieceWeightKg, "0.1", "kg")}
-          ${quoteNumberField("lot.totalWeightKg", "Total Weight", input.lot.totalWeightKg, "0.1", "kg")}
-          ${quoteNumberField("lot.loadCapacityKg", "Load Capacity", input.lot.loadCapacityKg, "0.1", "kg")}
-          ${quoteNumberField("lot.laborHoursPerLoad", "Labor/Load", input.lot.laborHoursPerLoad, "0.1", "h")}
-          ${quoteNumberField("lot.cycleCountOverride", "Cycle Override", input.lot.cycleCountOverride, "1", "cycles")}
-        </div>
-      </div>
+        ${quoteAccordionSection("lot", statuses.lot, `
+          <div class="field-grid geometry-grid">
+            ${quoteNumberField("lot.quantity", "Quantity", input.lot.quantity, "1", "pcs")}
+            ${quoteNumberField("lot.pieceWeightKg", "Piece Weight", input.lot.pieceWeightKg, "0.1", "kg")}
+            ${quoteNumberField("lot.totalWeightKg", "Total Weight", input.lot.totalWeightKg, "0.1", "kg")}
+            ${quoteNumberField("lot.loadCapacityKg", "Load Capacity", input.lot.loadCapacityKg, "0.1", "kg")}
+            ${quoteNumberField("lot.laborHoursPerLoad", "Labor/Load", input.lot.laborHoursPerLoad, "0.1", "h")}
+            ${quoteNumberField("lot.cycleCountOverride", "Cycle Override", input.lot.cycleCountOverride, "1", "cycles")}
+          </div>
+        `)}
 
-      <div class="section-block">
-        <div class="section-heading"><i class="ph ph-currency-dollar"></i><span>3. Shop Rates</span></div>
-        ${quoteRatePresetControls()}
-        <div class="field-grid equipment-grid">
-          ${quoteNumberField("shopRates.minimumLotCharge", "Minimum Lot", input.shopRates.minimumLotCharge, "1", "$")}
-          ${quoteNumberField("shopRates.setupAdminCharge", "Setup/Admin", input.shopRates.setupAdminCharge, "1", "$")}
-          ${quoteNumberField("shopRates.laborRatePerHour", "Labor Rate", input.shopRates.laborRatePerHour, "1", "$/h")}
-          ${quoteNumberField("shopRates.furnaceRatePerHour", "Furnace Rate", input.shopRates.furnaceRatePerHour, "1", "$/h")}
-          ${quoteNumberField("shopRates.bathQuenchRatePerHour", "Bath/Quench Rate", input.shopRates.bathQuenchRatePerHour, "1", "$/h")}
-          ${quoteNumberField("shopRates.temperFurnaceRatePerHour", "Temper Rate", input.shopRates.temperFurnaceRatePerHour, "1", "$/h")}
-          ${quoteNumberField("shopRates.inspectionBaseCharge", "Inspection", input.shopRates.inspectionBaseCharge, "1", "$")}
-          ${quoteNumberField("shopRates.consumablesPerKg", "Consumables", input.shopRates.consumablesPerKg, "0.01", "$/kg")}
-          ${quoteNumberField("shopRates.handlingPackagingCharge", "Handling/Pkg", input.shopRates.handlingPackagingCharge, "1", "$")}
-          ${quoteNumberField("shopRates.overheadPercent", "Overhead", input.shopRates.overheadPercent, "0.1", "%")}
-          ${quoteNumberField("shopRates.targetMarginPercent", "Margin", input.shopRates.targetMarginPercent, "0.1", "%")}
-        </div>
-      </div>
+        ${quoteAccordionSection("rates", statuses.rates, `
+          ${quoteRatePresetControls()}
+          <div class="quote-rate-groups">
+            <div class="quote-rate-group">
+              <div class="quote-rate-group-title">Fixed charges</div>
+              <div class="field-grid equipment-grid">
+                ${quoteNumberField("shopRates.minimumLotCharge", "Minimum Lot", input.shopRates.minimumLotCharge, "1", "$")}
+                ${quoteNumberField("shopRates.setupAdminCharge", "Setup/Admin", input.shopRates.setupAdminCharge, "1", "$")}
+                ${quoteNumberField("shopRates.inspectionBaseCharge", "Inspection", input.shopRates.inspectionBaseCharge, "1", "$")}
+                ${quoteNumberField("shopRates.handlingPackagingCharge", "Handling/Pkg", input.shopRates.handlingPackagingCharge, "1", "$")}
+              </div>
+            </div>
+            <div class="quote-rate-group">
+              <div class="quote-rate-group-title">Hourly and equipment</div>
+              <div class="field-grid equipment-grid">
+                ${quoteNumberField("shopRates.laborRatePerHour", "Labor Rate", input.shopRates.laborRatePerHour, "1", "$/h")}
+                ${quoteNumberField("shopRates.furnaceRatePerHour", "Furnace Rate", input.shopRates.furnaceRatePerHour, "1", "$/h")}
+                ${quoteNumberField("shopRates.bathQuenchRatePerHour", "Bath/Quench Rate", input.shopRates.bathQuenchRatePerHour, "1", "$/h")}
+                ${quoteNumberField("shopRates.temperFurnaceRatePerHour", "Temper Rate", input.shopRates.temperFurnaceRatePerHour, "1", "$/h")}
+              </div>
+            </div>
+            <div class="quote-rate-group">
+              <div class="quote-rate-group-title">Consumables and margin policy</div>
+              <div class="field-grid equipment-grid">
+                ${quoteNumberField("shopRates.consumablesPerKg", "Consumables", input.shopRates.consumablesPerKg, "0.01", "$/kg")}
+                ${quoteNumberField("shopRates.overheadPercent", "Overhead", input.shopRates.overheadPercent, "0.1", "%")}
+                ${quoteNumberField("shopRates.targetMarginPercent", "Margin", input.shopRates.targetMarginPercent, "0.1", "%")}
+              </div>
+            </div>
+          </div>
+        `)}
 
-      <div class="section-block">
-        <div class="section-heading"><i class="ph ph-sliders"></i><span>4. Overrides & Adjustments</span></div>
-        <div class="field-grid equipment-grid">
-          ${quoteNumberField("manualOverrides.billableFurnaceHours", "Furnace Hours", input.manualOverrides.billableFurnaceHours, "0.1", "h")}
-          ${quoteNumberField("manualOverrides.billableBathQuenchHours", "Bath/Quench Hours", input.manualOverrides.billableBathQuenchHours, "0.1", "h")}
-          ${quoteNumberField("manualOverrides.billableTemperHours", "Temper Hours", input.manualOverrides.billableTemperHours, "0.1", "h")}
-          ${quoteNumberField("manualOverrides.billableLaborHours", "Labor Hours", input.manualOverrides.billableLaborHours, "0.1", "h")}
-          ${quoteNumberField("manualOverrides.billableCycleCount", "Billable Cycles", input.manualOverrides.billableCycleCount, "1", "cycles")}
-          ${quoteNumberField("adjustments.complexityFactor", "Complexity", input.adjustments.complexityFactor, "0.05", "x")}
-          ${quoteNumberField("adjustments.scrapReworkReservePercent", "Scrap Reserve", input.adjustments.scrapReworkReservePercent, "0.1", "%")}
-          ${quoteNumberField("adjustments.expediteMultiplier", "Expedite", input.adjustments.expediteMultiplier, "0.05", "x")}
-          ${quoteNumberField("adjustments.manualAdderDiscount", "Adder/Discount", input.adjustments.manualAdderDiscount, "1", "$")}
-        </div>
+        ${quoteAccordionSection("adjustments", statuses.adjustments, `
+          <div class="field-grid equipment-grid">
+            ${quoteNumberField("manualOverrides.billableFurnaceHours", "Furnace Hours", input.manualOverrides.billableFurnaceHours, "0.1", "h")}
+            ${quoteNumberField("manualOverrides.billableBathQuenchHours", "Bath/Quench Hours", input.manualOverrides.billableBathQuenchHours, "0.1", "h")}
+            ${quoteNumberField("manualOverrides.billableTemperHours", "Temper Hours", input.manualOverrides.billableTemperHours, "0.1", "h")}
+            ${quoteNumberField("manualOverrides.billableLaborHours", "Labor Hours", input.manualOverrides.billableLaborHours, "0.1", "h")}
+            ${quoteNumberField("manualOverrides.billableCycleCount", "Billable Cycles", input.manualOverrides.billableCycleCount, "1", "cycles")}
+            ${quoteNumberField("adjustments.complexityFactor", "Complexity", input.adjustments.complexityFactor, "0.05", "x")}
+            ${quoteNumberField("adjustments.scrapReworkReservePercent", "Scrap Reserve", input.adjustments.scrapReworkReservePercent, "0.1", "%")}
+            ${quoteNumberField("adjustments.expediteMultiplier", "Expedite", input.adjustments.expediteMultiplier, "0.05", "x")}
+            ${quoteNumberField("adjustments.manualAdderDiscount", "Adder/Discount", input.adjustments.manualAdderDiscount, "1", "$")}
+          </div>
+        `)}
+
+        ${quoteAccordionSection("review", statuses.review, quoteReviewReadinessPanel(readiness))}
       </div>
     </section>
 
@@ -678,6 +720,155 @@ function quoteWorkspaceInput(): HeatTreatQuoteInput {
   } catch {
     return heatTreatQuoteState;
   }
+}
+
+interface QuoteReviewReadiness {
+  readonly status: string;
+  readonly warningCount: number;
+  readonly openCheckCount: number;
+  readonly sourceLabel: string;
+  readonly processLabel: string;
+  readonly ratePresetLabel: string;
+}
+
+function quoteReviewReadiness(input: HeatTreatQuoteInput, selectedPreset: QuoteRatePreset | undefined): QuoteReviewReadiness {
+  const fallbackChecklist = validationChecklists["heat-treat-rfq"];
+  let status = "Needs basis";
+  let warningCount = 0;
+  let openCheckCount = fallbackChecklist.items.filter((item) => !item.checked).length;
+
+  if (quoteInputHasPricingBasis(input)) {
+    try {
+      const result = recommendHeatTreatQuote(input);
+      const checklist = reconcileValidationChecklist(fallbackChecklist, result.validationChecks);
+      warningCount = result.warnings.length;
+      openCheckCount = checklist.items.filter((item) => !item.checked).length;
+      status = warningCount > 0 ? "Warnings" : "Ready";
+    } catch {
+      status = "Needs inputs";
+    }
+  }
+
+  return {
+    status,
+    warningCount,
+    openCheckCount,
+    sourceLabel: quoteSourceLabel(input.sourceMode),
+    processLabel: input.importedProcess.processLabel || input.processSummary,
+    ratePresetLabel: selectedPreset ? quoteRatePresetDisplayName(selectedPreset) : "Custom rates",
+  };
+}
+
+function quoteAccordionStatusMap(
+  input: HeatTreatQuoteInput,
+  selectedPreset: QuoteRatePreset | undefined,
+  activePreset: QuoteRatePreset | undefined,
+  readiness: QuoteReviewReadiness,
+): Record<QuoteAccordionSectionId, string> {
+  return {
+    source: input.sourceMode === "manual" ? "Manual" : "Imported",
+    lot: input.lot.cycleCountOverride !== undefined ? "Cycle override" : "6 fields",
+    rates: activePreset ? quoteRatePresetDisplayName(activePreset) : selectedPreset ? "Custom rates" : "No preset",
+    adjustments: quoteHasActiveOverridesOrAdjustments(input) ? "Overrides active" : "Optional",
+    review: readiness.status,
+  };
+}
+
+function quoteHasActiveOverridesOrAdjustments(input: HeatTreatQuoteInput): boolean {
+  return (
+    input.manualOverrides.billableFurnaceHours !== undefined ||
+    input.manualOverrides.billableBathQuenchHours !== undefined ||
+    input.manualOverrides.billableTemperHours !== undefined ||
+    input.manualOverrides.billableLaborHours !== undefined ||
+    input.manualOverrides.billableCycleCount !== undefined ||
+    input.adjustments.complexityFactor !== 1 ||
+    input.adjustments.scrapReworkReservePercent !== 0 ||
+    input.adjustments.expediteMultiplier !== 1 ||
+    input.adjustments.manualAdderDiscount !== 0
+  );
+}
+
+function quoteImportedAssumptionsSummary(input: HeatTreatQuoteInput): string {
+  if (input.sourceMode === "manual") {
+    return `
+      <div class="quote-assumption-summary">
+        <div><span>Source</span><strong>Manual quote</strong></div>
+        <div><span>Trace</span><strong>User-entered pricing basis</strong></div>
+      </div>
+    `;
+  }
+
+  const imported = input.importedProcess;
+  const timeLines = [
+    imported.austenitizeMinutes ? `Austenitize ${formatNumber(imported.austenitizeMinutes.nominalMin)} min` : "",
+    imported.bathMinutes ? `Bath ${formatNumber(imported.bathMinutes.nominalMin)} min` : "",
+    imported.temperMinutes ? `Temper ${formatNumber(imported.temperMinutes.nominalMin)} min x ${imported.temperCount}` : "",
+  ].filter(Boolean);
+
+  return `
+    <div class="quote-assumption-summary">
+      <div><span>Process</span><strong>${escapeHtml(imported.processLabel)}</strong></div>
+      <div><span>Confidence</span><strong>${escapeHtml(imported.processConfidence)}</strong></div>
+      <div><span>Time Basis</span><strong>${escapeHtml(timeLines.join(" | ") || "No imported time basis")}</strong></div>
+    </div>
+  `;
+}
+
+function quoteReviewReadinessPanel(readiness: QuoteReviewReadiness): string {
+  return `
+    <div class="quote-review-readiness" data-quote-review-readiness>
+      <dl class="quote-review-list">
+        <div class="quote-review-row"><dt>Source</dt><dd>${escapeHtml(readiness.sourceLabel)}</dd></div>
+        <div class="quote-review-row"><dt>Process</dt><dd>${escapeHtml(readiness.processLabel)}</dd></div>
+        <div class="quote-review-row"><dt>Rates</dt><dd>${escapeHtml(readiness.ratePresetLabel)}</dd></div>
+        <div class="quote-review-row"><dt>Warnings</dt><dd>${readiness.warningCount}</dd></div>
+        <div class="quote-review-row"><dt>Open checks</dt><dd>${readiness.openCheckCount}</dd></div>
+      </dl>
+      <p class="quote-review-note">
+        Heat-treatment service pricing only. Excludes material, machining, outside services, freight, tax, and contract terms unless manually adjusted.
+      </p>
+    </div>
+  `;
+}
+
+function quoteAccordionSection(
+  id: QuoteAccordionSectionId,
+  status: string,
+  body: string,
+): string {
+  const meta = quoteAccordionSectionMeta[id];
+  const isOpen = quoteAccordionOpenState[id];
+  const panelId = `quote-accordion-${id}-panel`;
+  const buttonId = `quote-accordion-${id}-button`;
+
+  return `
+    <section class="quote-accordion-section ${isOpen ? "is-open" : "is-collapsed"}" data-quote-accordion-section="${id}">
+      <h2 class="quote-accordion-heading">
+        <button
+          id="${buttonId}"
+          class="quote-accordion-toggle"
+          type="button"
+          data-quote-accordion-toggle="${id}"
+          aria-expanded="${isOpen ? "true" : "false"}"
+          aria-controls="${panelId}"
+        >
+          <span class="quote-accordion-title"><i class="ph ${meta.icon}"></i>${escapeHtml(meta.title)}</span>
+          <span class="quote-accordion-status" data-quote-accordion-status="${id}">${escapeHtml(status)}</span>
+          <i class="ph ph-caret-down quote-accordion-chevron" aria-hidden="true"></i>
+        </button>
+      </h2>
+      <div
+        id="${panelId}"
+        class="quote-accordion-panel"
+        data-quote-accordion-panel="${id}"
+        role="region"
+        aria-labelledby="${buttonId}"
+        ${isOpen ? "" : "hidden"}
+      >
+        ${body}
+      </div>
+    </section>
+  `;
 }
 
 function steelAustemperingWorkspace(): string {
@@ -945,10 +1136,49 @@ function bindQuoteInputs(): void {
       }
 
       renderQuoteRecommendation();
+      refreshQuoteAccordionSummary();
     });
   });
 
+  bindQuoteAccordionControls();
   bindQuoteRatePresetControls();
+}
+
+function bindQuoteAccordionControls(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-quote-accordion-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const sectionId = button.dataset.quoteAccordionToggle as QuoteAccordionSectionId | undefined;
+      if (!sectionId || !(sectionId in quoteAccordionOpenState)) {
+        return;
+      }
+
+      quoteAccordionOpenState = {
+        ...quoteAccordionOpenState,
+        [sectionId]: !quoteAccordionOpenState[sectionId],
+      };
+      renderWorkspace();
+    });
+  });
+}
+
+function refreshQuoteAccordionSummary(): void {
+  const input = quoteWorkspaceInput();
+  const selectedPreset = selectedQuoteRatePreset();
+  const activePreset = activeQuoteRatePreset(input);
+  const readiness = quoteReviewReadiness(input, activePreset);
+  const statuses = quoteAccordionStatusMap(input, selectedPreset, activePreset, readiness);
+
+  for (const [sectionId, status] of Object.entries(statuses) as Array<[QuoteAccordionSectionId, string]>) {
+    const statusEl = document.querySelector<HTMLElement>(`[data-quote-accordion-status="${sectionId}"]`);
+    if (statusEl) {
+      statusEl.textContent = status;
+    }
+  }
+
+  const reviewEl = document.querySelector<HTMLElement>("[data-quote-review-readiness]");
+  if (reviewEl) {
+    reviewEl.outerHTML = quoteReviewReadinessPanel(readiness);
+  }
 }
 
 function bindQuoteRatePresetControls(): void {
@@ -956,6 +1186,7 @@ function bindQuoteRatePresetControls(): void {
   const importInput = document.querySelector<HTMLInputElement>("#quote-rate-preset-import-input");
   select?.addEventListener("change", () => {
     selectedQuoteRatePresetId = select.value;
+    refreshQuoteAccordionSummary();
   });
 
   document
@@ -982,6 +1213,27 @@ function bindQuoteRatePresetControls(): void {
 
 function selectedQuoteRatePreset(): QuoteRatePreset | undefined {
   return findQuoteRatePreset(quoteRatePresetLibrary, selectedQuoteRatePresetId);
+}
+
+function activeQuoteRatePreset(input: HeatTreatQuoteInput): QuoteRatePreset | undefined {
+  const preset = selectedQuoteRatePreset();
+  return preset && quoteRatePresetMatchesShopRates(preset, input.shopRates) ? preset : undefined;
+}
+
+function quoteRatePresetMatchesShopRates(preset: QuoteRatePreset, shopRates: HeatTreatShopRates): boolean {
+  return (
+    preset.shopRates.minimumLotCharge === shopRates.minimumLotCharge &&
+    preset.shopRates.setupAdminCharge === shopRates.setupAdminCharge &&
+    preset.shopRates.laborRatePerHour === shopRates.laborRatePerHour &&
+    preset.shopRates.furnaceRatePerHour === shopRates.furnaceRatePerHour &&
+    preset.shopRates.bathQuenchRatePerHour === shopRates.bathQuenchRatePerHour &&
+    preset.shopRates.temperFurnaceRatePerHour === shopRates.temperFurnaceRatePerHour &&
+    preset.shopRates.inspectionBaseCharge === shopRates.inspectionBaseCharge &&
+    preset.shopRates.consumablesPerKg === shopRates.consumablesPerKg &&
+    preset.shopRates.handlingPackagingCharge === shopRates.handlingPackagingCharge &&
+    preset.shopRates.overheadPercent === shopRates.overheadPercent &&
+    preset.shopRates.targetMarginPercent === shopRates.targetMarginPercent
+  );
 }
 
 function applySelectedQuoteRatePreset(): void {
@@ -2082,6 +2334,9 @@ function updateChecklistItem(
       item.id === id ? { ...item, ...patch } : item
     ),
   });
+  if (modeId === "heat-treat-rfq") {
+    refreshQuoteAccordionSummary();
+  }
 }
 
 function setValidationChecklist(modeId: ProcessModeId, checklist: ValidationChecklistState): void {

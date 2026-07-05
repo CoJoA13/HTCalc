@@ -313,6 +313,14 @@ let quoteRatePresetLibrary: QuoteRatePresetLibrary = loadQuoteRatePresetLibrary(
 let selectedQuoteRatePresetId = "";
 
 type QuoteAccordionSectionId = "source" | "lot" | "rates" | "adjustments" | "review";
+type QuoteValidationResultStatus = "ready" | "incomplete" | "invalid" | "stale";
+
+interface QuoteValidationViewState {
+  readonly fieldMessages: Readonly<Record<string, string>>;
+  readonly sectionMessages: Partial<Record<QuoteAccordionSectionId, string>>;
+  readonly resultStatus: QuoteValidationResultStatus;
+  readonly summaryMessage: string;
+}
 
 const quoteAccordionSectionMeta: Record<QuoteAccordionSectionId, {
   readonly title: string;
@@ -332,6 +340,16 @@ let quoteAccordionOpenState: Record<QuoteAccordionSectionId, boolean> = {
   adjustments: false,
   review: true,
 };
+
+const emptyQuoteValidationViewState: QuoteValidationViewState = {
+  fieldMessages: {},
+  sectionMessages: {},
+  resultStatus: "incomplete",
+  summaryMessage: "",
+};
+
+let quoteValidationViewState: QuoteValidationViewState = emptyQuoteValidationViewState;
+let lastValidQuoteRecommendation: HeatTreatQuoteRecommendation | null = null;
 
 let manualQuoteProcessSummary = heatTreatQuoteState.processSummary;
 let manualQuoteImportedProcess: ImportedProcessAssumptions = structuredClone(heatTreatQuoteState.importedProcess);
@@ -601,6 +619,7 @@ function quoteWorkspace(): string {
             ${quoteNumberField("lot.laborHoursPerLoad", "Labor/Load", input.lot.laborHoursPerLoad, "0.1", "h")}
             ${quoteNumberField("lot.cycleCountOverride", "Cycle Override", input.lot.cycleCountOverride, "1", "cycles")}
           </div>
+          ${quoteSectionMessage("lot")}
         `)}
 
         ${quoteAccordionSection("rates", statuses.rates, `
@@ -633,6 +652,7 @@ function quoteWorkspace(): string {
               </div>
             </div>
           </div>
+          ${quoteSectionMessage("rates")}
         `)}
 
         ${quoteAccordionSection("adjustments", statuses.adjustments, `
@@ -647,6 +667,7 @@ function quoteWorkspace(): string {
             ${quoteNumberField("adjustments.expediteMultiplier", "Expedite", input.adjustments.expediteMultiplier, "0.05", "x")}
             ${quoteNumberField("adjustments.manualAdderDiscount", "Adder/Discount", input.adjustments.manualAdderDiscount, "1", "$")}
           </div>
+          ${quoteSectionMessage("adjustments")}
         `)}
 
         ${quoteAccordionSection("review", statuses.review, quoteReviewReadinessPanel(readiness))}
@@ -722,6 +743,137 @@ function quoteWorkspaceInput(): HeatTreatQuoteInput {
   }
 }
 
+const quoteFieldValidationMessages: Readonly<Record<string, string>> = {
+  "lot.quantity": "Quantity must be greater than zero.",
+  "lot.pieceWeightKg": "Piece weight must be greater than zero.",
+  "lot.totalWeightKg": "Total weight must be greater than zero.",
+  "lot.loadCapacityKg": "Load capacity must be greater than zero.",
+  "lot.laborHoursPerLoad": "Labor/load must be zero or greater.",
+  "lot.cycleCountOverride": "Cycle override must be greater than zero.",
+  "shopRates.minimumLotCharge": "Minimum lot charge must be zero or greater.",
+  "shopRates.setupAdminCharge": "Setup/admin charge must be zero or greater.",
+  "shopRates.laborRatePerHour": "Labor rate must be zero or greater.",
+  "shopRates.furnaceRatePerHour": "Furnace rate must be zero or greater.",
+  "shopRates.bathQuenchRatePerHour": "Bath/quench rate must be zero or greater.",
+  "shopRates.temperFurnaceRatePerHour": "Temper rate must be zero or greater.",
+  "shopRates.inspectionBaseCharge": "Inspection charge must be zero or greater.",
+  "shopRates.consumablesPerKg": "Consumables must be zero or greater.",
+  "shopRates.handlingPackagingCharge": "Handling/packaging charge must be zero or greater.",
+  "shopRates.overheadPercent": "Overhead must be at least 0 and less than 100%.",
+  "shopRates.targetMarginPercent": "Target margin must be at least 0 and less than 100%.",
+  "manualOverrides.billableFurnaceHours": "Furnace hours must be zero or greater.",
+  "manualOverrides.billableBathQuenchHours": "Bath/quench hours must be zero or greater.",
+  "manualOverrides.billableTemperHours": "Temper hours must be zero or greater.",
+  "manualOverrides.billableLaborHours": "Labor hours must be zero or greater.",
+  "manualOverrides.billableCycleCount": "Billable cycles must be greater than zero.",
+  "adjustments.complexityFactor": "Complexity must be greater than zero.",
+  "adjustments.scrapReworkReservePercent": "Scrap reserve must be zero or greater.",
+  "adjustments.expediteMultiplier": "Expedite multiplier must be greater than zero.",
+  "adjustments.manualAdderDiscount": "Adder/discount must be a finite number.",
+};
+
+const quoteFieldSections: Readonly<Record<string, QuoteAccordionSectionId>> = {
+  "lot.quantity": "lot",
+  "lot.pieceWeightKg": "lot",
+  "lot.totalWeightKg": "lot",
+  "lot.loadCapacityKg": "lot",
+  "lot.laborHoursPerLoad": "lot",
+  "lot.cycleCountOverride": "lot",
+  "shopRates.minimumLotCharge": "rates",
+  "shopRates.setupAdminCharge": "rates",
+  "shopRates.laborRatePerHour": "rates",
+  "shopRates.furnaceRatePerHour": "rates",
+  "shopRates.bathQuenchRatePerHour": "rates",
+  "shopRates.temperFurnaceRatePerHour": "rates",
+  "shopRates.inspectionBaseCharge": "rates",
+  "shopRates.consumablesPerKg": "rates",
+  "shopRates.handlingPackagingCharge": "rates",
+  "shopRates.overheadPercent": "rates",
+  "shopRates.targetMarginPercent": "rates",
+  "manualOverrides.billableFurnaceHours": "adjustments",
+  "manualOverrides.billableBathQuenchHours": "adjustments",
+  "manualOverrides.billableTemperHours": "adjustments",
+  "manualOverrides.billableLaborHours": "adjustments",
+  "manualOverrides.billableCycleCount": "adjustments",
+  "adjustments.complexityFactor": "adjustments",
+  "adjustments.scrapReworkReservePercent": "adjustments",
+  "adjustments.expediteMultiplier": "adjustments",
+  "adjustments.manualAdderDiscount": "adjustments",
+};
+
+function readyQuoteValidationState(): QuoteValidationViewState {
+  return {
+    fieldMessages: {},
+    sectionMessages: {},
+    resultStatus: "ready",
+    summaryMessage: "",
+  };
+}
+
+function quoteValidationStateForPricingBasis(input: HeatTreatQuoteInput): QuoteValidationViewState | null {
+  if (quoteInputHasPricingBasis(input)) {
+    return null;
+  }
+
+  if (!quoteInputHasManualBillableHours(input)) {
+    const message = "Enter lot weight and load capacity, or provide manual billable hours.";
+    return {
+      fieldMessages: {},
+      sectionMessages: {
+        lot: message,
+      },
+      resultStatus: "incomplete",
+      summaryMessage: message,
+    };
+  }
+
+  const message = "Imported process times need cycle basis or manual overrides for each imported time bucket.";
+  return {
+    fieldMessages: {},
+    sectionMessages: {
+      adjustments: message,
+    },
+    resultStatus: "invalid",
+    summaryMessage: message,
+  };
+}
+
+function quoteValidationStateFromError(error: unknown): QuoteValidationViewState {
+  const message = error instanceof Error
+    ? error.message
+    : "Current RFQ inputs need correction before a new quote can be calculated.";
+  const fieldPath = quoteFieldPathFromErrorMessage(message);
+
+  if (fieldPath) {
+    const fieldMessage = quoteFieldValidationMessages[fieldPath] ?? message.replace(/^Invalid heat-treat quote input: /, "");
+    const section = quoteFieldSections[fieldPath] ?? "review";
+    return {
+      fieldMessages: {
+        [fieldPath]: fieldMessage,
+      },
+      sectionMessages: {
+        [section]: fieldMessage,
+      },
+      resultStatus: "invalid",
+      summaryMessage: fieldMessage,
+    };
+  }
+
+  return {
+    fieldMessages: {},
+    sectionMessages: {
+      review: message,
+    },
+    resultStatus: "invalid",
+    summaryMessage: message,
+  };
+}
+
+function quoteFieldPathFromErrorMessage(message: string): string | null {
+  const match = /^Invalid heat-treat quote input: ([^ ]+) must /.exec(message);
+  return match?.[1] ?? null;
+}
+
 interface QuoteReviewReadiness {
   readonly status: string;
   readonly warningCount: number;
@@ -767,10 +919,10 @@ function quoteAccordionStatusMap(
 ): Record<QuoteAccordionSectionId, string> {
   return {
     source: input.sourceMode === "manual" ? "Manual" : "Imported",
-    lot: input.lot.cycleCountOverride !== undefined ? "Cycle override" : "6 fields",
-    rates: activePreset ? quoteRatePresetDisplayName(activePreset) : selectedPreset ? "Custom rates" : "No preset",
-    adjustments: quoteHasActiveOverridesOrAdjustments(input) ? "Overrides active" : "Optional",
-    review: readiness.status,
+    lot: quoteValidationViewState.sectionMessages.lot ? "Needs input" : input.lot.cycleCountOverride !== undefined ? "Cycle override" : "6 fields",
+    rates: quoteValidationViewState.sectionMessages.rates ? "Check rates" : activePreset ? quoteRatePresetDisplayName(activePreset) : selectedPreset ? "Custom rates" : "No preset",
+    adjustments: quoteValidationViewState.sectionMessages.adjustments ? "Check overrides" : quoteHasActiveOverridesOrAdjustments(input) ? "Overrides active" : "Optional",
+    review: quoteValidationViewState.resultStatus === "ready" ? readiness.status : "Needs correction",
   };
 }
 
@@ -1137,6 +1289,7 @@ function bindQuoteInputs(): void {
 
       renderQuoteRecommendation();
       refreshQuoteAccordionSummary();
+      refreshQuoteValidationUi();
     });
   });
 
@@ -1179,6 +1332,33 @@ function refreshQuoteAccordionSummary(): void {
   if (reviewEl) {
     reviewEl.outerHTML = quoteReviewReadinessPanel(readiness);
   }
+}
+
+function refreshQuoteValidationUi(): void {
+  document.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-quote-path]").forEach((control) => {
+    const path = control.dataset.quotePath ?? "";
+    const message = quoteValidationViewState.fieldMessages[path] ?? "";
+    control.setAttribute("aria-describedby", quoteFieldMessageId(path));
+    if (message) {
+      control.setAttribute("aria-invalid", "true");
+    } else {
+      control.removeAttribute("aria-invalid");
+    }
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-quote-field-message-for]").forEach((messageEl) => {
+    const path = messageEl.dataset.quoteFieldMessageFor ?? "";
+    const message = quoteValidationViewState.fieldMessages[path] ?? "";
+    messageEl.textContent = message;
+    messageEl.hidden = !message;
+  });
+
+  document.querySelectorAll<HTMLElement>("[data-quote-section-message-for]").forEach((messageEl) => {
+    const sectionId = messageEl.dataset.quoteSectionMessageFor as QuoteAccordionSectionId | undefined;
+    const message = sectionId ? quoteValidationViewState.sectionMessages[sectionId] ?? "" : "";
+    messageEl.textContent = message;
+    messageEl.hidden = !message;
+  });
 }
 
 function bindQuoteRatePresetControls(): void {
@@ -1590,6 +1770,8 @@ function restoreProject(project: HtcalcProjectState): void {
   steelAustemperingState = structuredClone(project.steelAustempering.input);
   martemperingState = structuredClone(project.martempering.input);
   heatTreatQuoteState = structuredClone(project.heatTreatQuote.input);
+  quoteValidationViewState = emptyQuoteValidationViewState;
+  lastValidQuoteRecommendation = null;
   resetManualQuoteSourceCache(project.heatTreatQuote.input);
   pinnedComparisonBaseline = project.pinnedComparisonBaseline
     ? structuredClone(project.pinnedComparisonBaseline)
@@ -1995,6 +2177,110 @@ function renderSteelRecommendation(modeId: SteelModeId): void {
   }
 }
 
+function renderQuoteCorrectionState(recommendationPanel: HTMLDivElement, validation: QuoteValidationViewState): void {
+  recommendationPanel.innerHTML = `
+    <div class="error-state quote-correction-state">
+      <i class="ph ph-warning-octagon"></i>
+      <h2>Current RFQ inputs need correction</h2>
+      <p>Current RFQ inputs need correction before a new quote can be calculated.</p>
+      ${validation.summaryMessage ? `<p>${escapeHtml(validation.summaryMessage)}</p>` : ""}
+    </div>
+  `;
+}
+
+function quoteStaleNotice(validation: QuoteValidationViewState): string {
+  return `
+    <div class="quote-stale-notice" role="status">
+      <strong>Showing last valid quote.</strong>
+      <span>Current inputs need correction.</span>
+      ${validation.summaryMessage ? `<em>${escapeHtml(validation.summaryMessage)}</em>` : ""}
+    </div>
+  `;
+}
+
+function renderQuoteResult(
+  recommendationPanel: HTMLDivElement,
+  result: HeatTreatQuoteRecommendation,
+  options: { readonly stale: boolean } = { stale: false },
+): void {
+  const confidenceClass = `confidence-${result.confidence}`;
+  const assumptions = result.importedAssumptions.length > 0
+    ? result.importedAssumptions
+    : ["No imported assumptions for the current quote."];
+  const warnings = result.warnings.length > 0
+    ? result.warnings
+    : ["No active quote warnings for the current input set."];
+  const perWeight = quotePerWeightDisplay(result.pricePerKg, unitSystem);
+  const customerSummaryLines = displayQuoteCustomerSummaryLines(result, unitSystem);
+  const staleAttribute = options.stale ? " disabled aria-disabled=\"true\"" : "";
+
+  recommendationPanel.innerHTML = `
+    ${options.stale ? quoteStaleNotice(quoteValidationViewState) : ""}
+    <div class="summary-header">
+      <div>
+        <div class="eyebrow">Heat-Treat RFQ</div>
+        <h2>${formatCurrency(result.lotPrice)}</h2>
+        <p>${escapeHtml(result.processSummary)}</p>
+      </div>
+      <div class="summary-side">
+        <span class="confidence ${confidenceClass}">${result.confidence}</span>
+        <div class="recommendation-actions">
+          <button class="icon-button" data-quote-report-action="open" type="button" title="Open printable report"${staleAttribute}>
+            <i class="ph ph-file-text"></i>
+          </button>
+          <button class="icon-button" data-quote-report-action="print" type="button" title="Print report"${staleAttribute}>
+            <i class="ph ph-printer"></i>
+          </button>
+          <button class="icon-button" data-quote-report-action="markdown" type="button" title="Download Markdown report"${staleAttribute}>
+            <i class="ph ph-download-simple"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="metric-strip">
+      ${metric("Unit Price", formatCurrency(result.unitPrice), "per piece")}
+      ${metric(
+        perWeight.label,
+        perWeight.value === null ? "Unavailable" : `${formatCurrency(perWeight.value)}/${perWeight.unit}`,
+        "weight basis",
+      )}
+      ${metric("Cycles", result.cycleCount === null ? "Manual" : String(result.cycleCount), "billable")}
+      ${metric("Confidence", result.confidence, quoteSourceLabel(result.sourceMode))}
+    </div>
+
+    <div class="result-section">
+      <div class="result-title"><i class="ph ph-list-checks"></i> Customer Summary</div>
+      <ul class="check-list">${customerSummaryLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
+    </div>
+
+    <div class="result-section">
+      <div class="result-title"><i class="ph ph-git-branch"></i> Imported Assumptions</div>
+      <ul class="check-list">${assumptions.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
+    </div>
+
+    <div class="result-section">
+      <div class="result-title"><i class="ph ph-calculator"></i> Cost Breakdown</div>
+      ${quoteCostBreakdownRows(result.breakdown)}
+    </div>
+
+    <div class="result-section">
+      <div class="result-title"><i class="ph ph-warning"></i> Warnings</div>
+      <ul class="warning-list">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
+    </div>
+
+    <div class="result-section">
+      <div class="result-title"><i class="ph ph-check-square"></i> Validation Checks</div>
+      ${validationChecklistRows(validationChecklists["heat-treat-rfq"])}
+    </div>
+  `;
+
+  if (!options.stale) {
+    bindQuoteRecommendationActions(result);
+  }
+  bindChecklistControls();
+}
+
 function renderQuoteRecommendation(): void {
   const recommendationPanel = document.querySelector<HTMLDivElement>("#recommendation");
   if (!recommendationPanel) {
@@ -2003,8 +2289,18 @@ function renderQuoteRecommendation(): void {
 
   try {
     const quoteInput = quoteInputForCurrentState();
-    if (!quoteInputHasPricingBasis(quoteInput)) {
-      renderIncompleteQuoteState(recommendationPanel);
+    const pricingBasisValidation = quoteValidationStateForPricingBasis(quoteInput);
+    if (pricingBasisValidation) {
+      quoteValidationViewState = lastValidQuoteRecommendation
+        ? { ...pricingBasisValidation, resultStatus: "stale" }
+        : pricingBasisValidation;
+      if (lastValidQuoteRecommendation) {
+        renderQuoteResult(recommendationPanel, lastValidQuoteRecommendation, { stale: true });
+      } else {
+        renderQuoteCorrectionState(recommendationPanel, quoteValidationViewState);
+      }
+      refreshQuoteValidationUi();
+      refreshQuoteAccordionSummary();
       return;
     }
 
@@ -2013,95 +2309,24 @@ function renderQuoteRecommendation(): void {
       "heat-treat-rfq",
       reconcileValidationChecklist(validationChecklists["heat-treat-rfq"], result.validationChecks),
     );
-    const confidenceClass = `confidence-${result.confidence}`;
-    const assumptions = result.importedAssumptions.length > 0
-      ? result.importedAssumptions
-      : ["No imported assumptions for the current quote."];
-    const warnings = result.warnings.length > 0
-      ? result.warnings
-      : ["No active quote warnings for the current input set."];
-    const perWeight = quotePerWeightDisplay(result.pricePerKg, unitSystem);
-    const customerSummaryLines = displayQuoteCustomerSummaryLines(result, unitSystem);
-
-    recommendationPanel.innerHTML = `
-      <div class="summary-header">
-        <div>
-          <div class="eyebrow">Heat-Treat RFQ</div>
-          <h2>${formatCurrency(result.lotPrice)}</h2>
-          <p>${escapeHtml(result.processSummary)}</p>
-        </div>
-        <div class="summary-side">
-          <span class="confidence ${confidenceClass}">${result.confidence}</span>
-          <div class="recommendation-actions">
-            <button class="icon-button" data-quote-report-action="open" type="button" title="Open printable report">
-              <i class="ph ph-file-text"></i>
-            </button>
-            <button class="icon-button" data-quote-report-action="print" type="button" title="Print report">
-              <i class="ph ph-printer"></i>
-            </button>
-            <button class="icon-button" data-quote-report-action="markdown" type="button" title="Download Markdown report">
-              <i class="ph ph-download-simple"></i>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div class="metric-strip">
-        ${metric("Unit Price", formatCurrency(result.unitPrice), "per piece")}
-        ${metric(
-          perWeight.label,
-          perWeight.value === null ? "Unavailable" : `${formatCurrency(perWeight.value)}/${perWeight.unit}`,
-          "weight basis",
-        )}
-        ${metric("Cycles", result.cycleCount === null ? "Manual" : String(result.cycleCount), "billable")}
-        ${metric("Confidence", result.confidence, quoteSourceLabel(result.sourceMode))}
-      </div>
-
-      <div class="result-section">
-        <div class="result-title"><i class="ph ph-list-checks"></i> Customer Summary</div>
-        <ul class="check-list">${customerSummaryLines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
-      </div>
-
-      <div class="result-section">
-        <div class="result-title"><i class="ph ph-git-branch"></i> Imported Assumptions</div>
-        <ul class="check-list">${assumptions.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>
-      </div>
-
-      <div class="result-section">
-        <div class="result-title"><i class="ph ph-calculator"></i> Cost Breakdown</div>
-        ${quoteCostBreakdownRows(result.breakdown)}
-      </div>
-
-      <div class="result-section">
-        <div class="result-title"><i class="ph ph-warning"></i> Warnings</div>
-        <ul class="warning-list">${warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join("")}</ul>
-      </div>
-
-      <div class="result-section">
-        <div class="result-title"><i class="ph ph-check-square"></i> Validation Checks</div>
-        ${validationChecklistRows(validationChecklists["heat-treat-rfq"])}
-      </div>
-    `;
-    bindQuoteRecommendationActions(result);
-    bindChecklistControls();
+    lastValidQuoteRecommendation = result;
+    quoteValidationViewState = readyQuoteValidationState();
+    renderQuoteResult(recommendationPanel, result);
+    refreshQuoteValidationUi();
+    refreshQuoteAccordionSummary();
   } catch (error) {
-    recommendationPanel.innerHTML = `
-      <div class="error-state">
-        <i class="ph ph-warning-octagon"></i>
-        <h2>RFQ needs pricing inputs</h2>
-        <p>${escapeHtml(error instanceof Error ? error.message : "Unable to calculate quote recommendation.")}</p>
-      </div>
-    `;
+    const validation = quoteValidationStateFromError(error);
+    quoteValidationViewState = lastValidQuoteRecommendation
+      ? { ...validation, resultStatus: "stale" }
+      : validation;
+    if (lastValidQuoteRecommendation) {
+      renderQuoteResult(recommendationPanel, lastValidQuoteRecommendation, { stale: true });
+    } else {
+      renderQuoteCorrectionState(recommendationPanel, quoteValidationViewState);
+    }
+    refreshQuoteValidationUi();
+    refreshQuoteAccordionSummary();
   }
-}
-
-function renderIncompleteQuoteState(recommendationPanel: HTMLDivElement): void {
-  recommendationPanel.innerHTML = `
-    <div class="result-section">
-      <div class="result-title"><i class="ph ph-calculator"></i> Pricing Basis Needed</div>
-      <p>Enter lot weight/load capacity or manual billable hours to calculate a quote.</p>
-    </div>
-  `;
 }
 
 function quoteInputForCurrentState(): HeatTreatQuoteInput {
@@ -3107,6 +3332,37 @@ function steelSelectField(
   `;
 }
 
+function quoteFieldMessageId(path: string): string {
+  return `quote-field-message-${path.replace(/[^a-z0-9]+/gi, "-")}`;
+}
+
+function quoteFieldValidationAttributes(path: string): string {
+  const message = quoteValidationViewState.fieldMessages[path];
+  const invalid = message ? ` aria-invalid="true"` : "";
+  return ` aria-describedby="${quoteFieldMessageId(path)}"${invalid}`;
+}
+
+function quoteFieldMessageElement(path: string): string {
+  const message = quoteValidationViewState.fieldMessages[path] ?? "";
+  return `
+    <p
+      id="${quoteFieldMessageId(path)}"
+      class="quote-field-message"
+      data-quote-field-message-for="${path}"
+      ${message ? "" : "hidden"}
+    >${escapeHtml(message)}</p>
+  `;
+}
+
+function quoteSectionMessage(sectionId: QuoteAccordionSectionId): string {
+  const message = quoteValidationViewState.sectionMessages[sectionId] ?? "";
+  return `
+    <p class="quote-section-message" data-quote-section-message-for="${sectionId}" ${message ? "" : "hidden"}>
+      ${escapeHtml(message)}
+    </p>
+  `;
+}
+
 function quoteSelectField(
   path: string,
   label: string,
@@ -3116,11 +3372,12 @@ function quoteSelectField(
   return `
     <label class="field">
       ${fieldLabel(label)}
-      <select data-quote-path="${path}">
+      <select data-quote-path="${path}"${quoteFieldValidationAttributes(path)}>
         ${options
           .map(([optionValue, optionLabel]) => `<option value="${optionValue}" ${optionValue === value ? "selected" : ""}>${optionLabel}</option>`)
           .join("")}
       </select>
+      ${quoteFieldMessageElement(path)}
     </label>
   `;
 }
@@ -3134,7 +3391,8 @@ function quoteTextField(
   return `
     <label class="field">
       ${fieldLabel(label)}
-      <input data-quote-path="${path}" type="text" value="${escapeAttribute(value)}" ${readOnly ? "readonly" : ""} />
+      <input data-quote-path="${path}" type="text" value="${escapeAttribute(value)}" ${readOnly ? "readonly" : ""}${quoteFieldValidationAttributes(path)} />
+      ${quoteFieldMessageElement(path)}
     </label>
   `;
 }
@@ -3179,9 +3437,10 @@ function quoteNumberField(
     <label class="field">
       ${fieldLabel(label)}
       <div class="unit-input">
-        <input data-quote-path="${path}" type="number" value="${displayValue}" step="${step}"${minAttribute} />
+        <input data-quote-path="${path}" type="number" value="${displayValue}" step="${step}"${minAttribute}${quoteFieldValidationAttributes(path)} />
         ${displayUnit ? `<span data-unit-for="${path}">${displayUnit}</span>` : ""}
       </div>
+      ${quoteFieldMessageElement(path)}
     </label>
   `;
 }

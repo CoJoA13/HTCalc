@@ -6,10 +6,17 @@ import type {
   ProjectMetadata,
   ValidationChecklistState,
 } from "./project-state.js";
+import {
+  quotePerWeightDisplay,
+} from "./quote-display.js";
+import type {
+  UnitSystem,
+} from "./units.js";
 
 export interface CreateQuoteReportViewModelInput {
   readonly exportedAt: string;
   readonly metadata: ProjectMetadata;
+  readonly unitSystem: UnitSystem;
   readonly input: HeatTreatQuoteInput;
   readonly recommendation: HeatTreatQuoteRecommendation;
   readonly validationChecklist: ValidationChecklistState;
@@ -28,6 +35,19 @@ export function createQuoteReportViewModel(
   };
 }
 
+export function displayQuoteCustomerSummaryLines(
+  recommendation: HeatTreatQuoteRecommendation,
+  unitSystem: UnitSystem,
+): string[] {
+  const perWeight = quotePerWeightDisplay(recommendation.pricePerKg, unitSystem);
+  const perWeightLabel = `Price per ${perWeight.unit}`;
+  const perWeightValue = perWeight.value === null ? "unavailable" : formatMoney(perWeight.value);
+
+  return recommendation.customerSummaryLines.map((line) => (
+    quoteCustomerSummaryLine(line, perWeightLabel, perWeightValue)
+  ));
+}
+
 export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): string {
   const notes = report.metadata.notes.trim() || "No project notes entered.";
   const warningLines = report.recommendation.warnings.length > 0
@@ -36,9 +56,6 @@ export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): stri
   const assumptionLines = report.recommendation.importedAssumptions.length > 0
     ? report.recommendation.importedAssumptions.map((assumption) => `- ${assumption}`)
     : ["- No imported assumptions."];
-  const customerSummaryLines = report.recommendation.customerSummaryLines.length > 0
-    ? report.recommendation.customerSummaryLines.map((line) => `- ${line}`)
-    : ["- No customer quote summary lines generated."];
   const internalNoteLines = report.recommendation.internalNotes.length > 0
     ? report.recommendation.internalNotes.map((note) => `- ${note}`)
     : ["- No internal quote notes generated."];
@@ -48,6 +65,12 @@ export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): stri
       ...(item.notes.trim() ? [`  Notes: ${item.notes.trim()}`] : []),
     ])
     : ["- No validation checks generated."];
+  const perWeight = quotePerWeightDisplay(report.recommendation.pricePerKg, report.unitSystem);
+  const perWeightLabel = `Price per ${perWeight.unit}`;
+  const perWeightValue = perWeight.value === null ? "Unavailable" : formatMoney(perWeight.value);
+  const customerSummaryLines = report.recommendation.customerSummaryLines.length > 0
+    ? displayQuoteCustomerSummaryLines(report.recommendation, report.unitSystem).map((line) => `- ${line}`)
+    : ["- No customer quote summary lines generated."];
 
   return [
     `# ${report.title}`,
@@ -69,7 +92,7 @@ export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): stri
     `Cycle count: ${report.recommendation.cycleCount ?? "Manual"}`,
     `Lot price: ${formatMoney(report.recommendation.lotPrice)}`,
     `Unit price: ${formatMoney(report.recommendation.unitPrice)}`,
-    `Price per kg: ${report.recommendation.pricePerKg === null ? "Unavailable" : formatMoney(report.recommendation.pricePerKg)}`,
+    `${perWeightLabel}: ${perWeightValue}`,
     `Confidence: ${report.recommendation.confidence}`,
     "",
     "## Customer Quote Summary",
@@ -145,4 +168,16 @@ function formatNumber(value: number): string {
 function formatMoney(value: number): string {
   const amount = `$${Math.abs(value).toFixed(2)}`;
   return value < 0 ? `-${amount}` : amount;
+}
+
+function quoteCustomerSummaryLine(
+  line: string,
+  perWeightLabel: string,
+  perWeightValue: string,
+): string {
+  if (line.startsWith("Price per kg:") || line.startsWith("Price per weight:")) {
+    return `${perWeightLabel}: ${perWeightValue}`;
+  }
+
+  return line;
 }

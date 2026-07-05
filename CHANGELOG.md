@@ -4,6 +4,7 @@ All notable project changes are summarized here.
 
 ## Unreleased
 
+- Added browser-like Heat-Treat RFQ workflow coverage and imperial `$/lb` per-weight quote display.
 - Added Heat-Treat RFQ pricing design and implementation for recipe-imported heat-treatment service estimates.
 - Added public repository documentation, contribution guidance, GitHub issue and PR templates, Dependabot configuration, and MIT licensing.
 

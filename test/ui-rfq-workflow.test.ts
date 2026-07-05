@@ -195,6 +195,37 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(recommendationText()).toContain("Heat-Treat RFQ");
   });
 
+  it("does not reuse the previous RFQ quote as stale after loading an incomplete project", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    enterQuoteBasisAndRates();
+
+    expect(recommendationText()).toContain("Heat-Treat RFQ");
+    expect(quoteReportActionButton("open").disabled).toBe(false);
+    const validLotPrice = recommendationText().match(/\$[0-9,.]+/)?.[0];
+    expect(validLotPrice).toBeDefined();
+
+    document.querySelector<HTMLButtonElement>("#save-project")?.click();
+    expect(savedProjectBlob).not.toBeNull();
+    const savedProject = JSON.parse(await savedProjectBlob!.text());
+    delete savedProject.heatTreatQuote.input.lot.totalWeightKg;
+    delete savedProject.heatTreatQuote.input.lot.loadCapacityKg;
+    delete savedProject.heatTreatQuote.input.manualOverrides.billableFurnaceHours;
+    delete savedProject.heatTreatQuote.input.manualOverrides.billableBathQuenchHours;
+    delete savedProject.heatTreatQuote.input.manualOverrides.billableTemperHours;
+    delete savedProject.heatTreatQuote.input.manualOverrides.billableLaborHours;
+
+    await loadProject(JSON.stringify(savedProject));
+
+    expect(recommendationText()).toContain("Current RFQ inputs need correction before a new quote can be calculated.");
+    expect(recommendationText()).toContain("Enter lot weight and load capacity, or provide manual billable hours.");
+    expect(recommendationText()).not.toContain("Showing last valid quote");
+    expect(recommendationText()).not.toContain(validLotPrice!);
+    expect(quoteAccordionStatusText("lot")).toBe("Needs input");
+    expect(quoteSectionMessage("lot")).toBe("Enter lot weight and load capacity, or provide manual billable hours.");
+  });
+
   it("shows custom RFQ rates when current shop rates differ from the selected preset", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("Dirty RFQ");
     await import("../src/ui/main.js");
@@ -289,6 +320,69 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(quoteAccordionStatusText("rates")).not.toContain("Preset B");
     expect(quoteReviewReadinessText()).toContain("Custom rates");
     expect(quoteReviewReadinessText()).not.toContain("Preset B");
+  });
+
+  it("shows RFQ margin validation at the field and section level", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    enterQuoteBasisAndRates();
+    setQuoteNumber("shopRates.targetMarginPercent", "100");
+
+    expect(quoteFieldMessage("shopRates.targetMarginPercent")).toBe("Target margin must be at least 0 and less than 100%.");
+    expect(quoteControl<HTMLInputElement>("shopRates.targetMarginPercent").getAttribute("aria-invalid")).toBe("true");
+    expect(quoteAccordionStatusText("rates")).toBe("Check rates");
+    expect(quoteAccordionStatusText("review")).toBe("Needs correction");
+    expect(recommendationText()).toContain("Showing last valid quote. Current inputs need correction.");
+    expect(recommendationText()).toContain("Target margin must be at least 0 and less than 100%.");
+
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    expect(quoteFieldMessage("shopRates.targetMarginPercent")).toBe("");
+    expect(quoteControl<HTMLInputElement>("shopRates.targetMarginPercent").hasAttribute("aria-invalid")).toBe(false);
+    expect(quoteAccordionStatusText("review")).toBe("Warnings");
+    expect(recommendationText()).toContain("Heat-Treat RFQ");
+  });
+
+  it("shows missing RFQ quote basis as a Lot & Capacity correction", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+
+    expect(quoteAccordionStatusText("lot")).toBe("Needs input");
+    expect(quoteSectionMessage("lot")).toBe("Enter lot weight and load capacity, or provide manual billable hours.");
+    expect(quoteAccordionStatusText("review")).toBe("Needs correction");
+    expect(recommendationText()).toContain("Current RFQ inputs need correction before a new quote can be calculated.");
+    expect(recommendationText()).toContain("Enter lot weight and load capacity, or provide manual billable hours.");
+  });
+
+  it("keeps the last valid RFQ result visible as stale after an invalid edit", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    enterQuoteBasisAndRates();
+
+    expect(recommendationText()).toContain("Heat-Treat RFQ");
+    expect(quoteReportActionButton("open").disabled).toBe(false);
+    const validRecommendation = recommendationText();
+    const validLotPrice = validRecommendation.match(/\$[0-9,.]+/)?.[0];
+    expect(validLotPrice).toBeDefined();
+
+    setQuoteNumber("shopRates.targetMarginPercent", "100");
+
+    expect(recommendationText()).toContain("Showing last valid quote. Current inputs need correction.");
+    expect(recommendationText()).toContain("Heat-Treat RFQ");
+    expect(recommendationText()).toContain("Target margin must be at least 0 and less than 100%.");
+    expect(recommendationText()).toContain(validLotPrice!);
+    expect(quoteReportActionButton("open").disabled).toBe(true);
+    expect(quoteReportActionButton("print").disabled).toBe(true);
+    expect(quoteReportActionButton("markdown").disabled).toBe(true);
+
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    expect(recommendationText()).not.toContain("Showing last valid quote");
+    expect(quoteFieldMessage("shopRates.targetMarginPercent")).toBe("");
+    expect(quoteReportActionButton("open").disabled).toBe(false);
   });
 
   it("deletes RFQ shop-rate presets without changing current quote rates", async () => {
@@ -433,7 +527,8 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(quoteAccordionPanel("source").hidden).toBe(false);
 
     expect(quoteAccordionText("lot")).toContain("Lot & Capacity");
-    expect(quoteAccordionText("lot")).toContain("6 fields");
+    expect(quoteAccordionText("lot")).toContain("Needs input");
+    expect(quoteSectionMessage("lot")).toBe("Enter lot weight and load capacity, or provide manual billable hours.");
     expect(quoteAccordionButton("lot").getAttribute("aria-expanded")).toBe("true");
     expect(quoteAccordionPanel("lot").hidden).toBe(false);
 
@@ -530,6 +625,24 @@ function setQuoteNumber(path: string, value: string): void {
   input.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+function enterQuoteBasisAndRates(): void {
+  setQuoteNumber("lot.quantity", "30");
+  setQuoteNumber("lot.totalWeightKg", "150");
+  setQuoteNumber("lot.loadCapacityKg", "75");
+  setQuoteNumber("lot.laborHoursPerLoad", "0.75");
+  setQuoteNumber("shopRates.minimumLotCharge", "500");
+  setQuoteNumber("shopRates.setupAdminCharge", "100");
+  setQuoteNumber("shopRates.laborRatePerHour", "90");
+  setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+  setQuoteNumber("shopRates.bathQuenchRatePerHour", "95");
+  setQuoteNumber("shopRates.temperFurnaceRatePerHour", "80");
+  setQuoteNumber("shopRates.inspectionBaseCharge", "60");
+  setQuoteNumber("shopRates.consumablesPerKg", "0.55");
+  setQuoteNumber("shopRates.handlingPackagingCharge", "30");
+  setQuoteNumber("shopRates.overheadPercent", "18");
+  setQuoteNumber("shopRates.targetMarginPercent", "22");
+}
+
 type QuoteAccordionSection = "source" | "lot" | "rates" | "adjustments" | "review";
 
 function quoteAccordionButton(section: QuoteAccordionSection): HTMLButtonElement {
@@ -554,6 +667,26 @@ function quoteAccordionStatusText(section: QuoteAccordionSection): string {
   const status = document.querySelector<HTMLElement>(`[data-quote-accordion-status="${section}"]`);
   expect(status).not.toBeNull();
   return compactText(status!.textContent ?? "");
+}
+
+function quoteFieldMessage(path: string): string {
+  const message = document.querySelector<HTMLElement>(`[data-quote-field-message-for="${path}"]`);
+  expect(message).not.toBeNull();
+  return message!.hidden ? "" : compactText(message!.textContent ?? "");
+}
+
+function quoteSectionMessage(section: QuoteAccordionSection): string {
+  const message = document.querySelector<HTMLElement>(`[data-quote-section-message-for="${section}"]`);
+  expect(message).not.toBeNull();
+  return message!.hidden ? "" : compactText(message!.textContent ?? "");
+}
+
+type QuoteReportAction = "open" | "print" | "markdown";
+
+function quoteReportActionButton(action: QuoteReportAction): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>(`[data-quote-report-action="${action}"]`);
+  expect(button).not.toBeNull();
+  return button!;
 }
 
 function quoteReviewReadinessText(): string {

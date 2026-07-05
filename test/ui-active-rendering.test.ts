@@ -37,17 +37,21 @@ describe("active process recommendation rendering", () => {
     expect(mainSource).toContain("quoteAssumptionsForSource");
   });
 
-  it("renders incomplete RFQ pricing basis without using the generic error state", () => {
+  it("renders incomplete RFQ pricing basis through the correction state", () => {
     expect(mainSource).toContain("function quoteInputHasPricingBasis");
-    expect(mainSource).toContain("function renderIncompleteQuoteState");
-    expect(mainSource).toContain("Enter lot weight/load capacity or manual billable hours to calculate a quote.");
+    expect(mainSource).toContain("function quoteValidationStateForPricingBasis");
+    expect(mainSource).toContain("function renderQuoteCorrectionState");
+    expect(mainSource).toContain("Current RFQ inputs need correction before a new quote can be calculated.");
+    expect(mainSource).toContain("Enter lot weight and load capacity, or provide manual billable hours.");
 
     const renderQuoteBody = mainSource.match(/function renderQuoteRecommendation[\s\S]*?\n}\n\nfunction quoteInputForCurrentState/)?.[0] ?? "";
-    expect(renderQuoteBody).toContain("if (!quoteInputHasPricingBasis(quoteInput))");
-    expect(renderQuoteBody).toContain("renderIncompleteQuoteState(recommendationPanel);");
+    expect(renderQuoteBody).toContain("const pricingBasisValidation = quoteValidationStateForPricingBasis(quoteInput);");
+    expect(renderQuoteBody).toContain("if (pricingBasisValidation)");
+    expect(renderQuoteBody).toContain("renderQuoteCorrectionState(recommendationPanel, quoteValidationViewState);");
 
-    const incompleteStateBody = mainSource.match(/function renderIncompleteQuoteState[\s\S]*?\n}\n\nfunction quoteInputForCurrentState/)?.[0] ?? "";
-    expect(incompleteStateBody).not.toContain("error-state");
+    const correctionStateBody = mainSource.match(/function renderQuoteCorrectionState[\s\S]*?\n}\n\nfunction quoteStaleNotice/)?.[0] ?? "";
+    expect(correctionStateBody).toContain("quote-correction-state");
+    expect(correctionStateBody).not.toContain("RFQ needs pricing inputs");
   });
 
   it("keeps manual RFQ summary and imported source label synchronized", () => {

@@ -288,7 +288,7 @@ textarea {
 
 .quote-rate-presets {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
   align-items: end;
   gap: 10px;
   margin-bottom: 12px;
@@ -302,7 +302,7 @@ textarea {
 
 .quote-rate-preset-actions .secondary-action {
   height: 38px;
-  padding: 0 12px;
+  padding: 0 11px;
   white-space: nowrap;
 }
 

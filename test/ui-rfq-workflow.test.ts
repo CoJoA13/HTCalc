@@ -5,18 +5,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let savedProjectBlob: Blob | null = null;
+let createdObjectUrlBlobs: Blob[] = [];
+let clickedDownloadNames: string[] = [];
+let originalCreateObjectUrlDescriptor: PropertyDescriptor | undefined;
+let originalRevokeObjectUrlDescriptor: PropertyDescriptor | undefined;
+let originalPrintDescriptor: PropertyDescriptor | undefined;
 
 describe("Heat-Treat RFQ UI workflow", () => {
   beforeEach(() => {
     vi.resetModules();
     savedProjectBlob = null;
+    createdObjectUrlBlobs = [];
+    clickedDownloadNames = [];
+    originalCreateObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, "createObjectURL");
+    originalRevokeObjectUrlDescriptor = Object.getOwnPropertyDescriptor(URL, "revokeObjectURL");
+    originalPrintDescriptor = Object.getOwnPropertyDescriptor(window, "print");
     document.body.innerHTML = `<div id="app"></div>`;
 
     Object.defineProperty(URL, "createObjectURL", {
       configurable: true,
       value: vi.fn((blob: Blob) => {
-        savedProjectBlob = blob;
-        return "blob:htcalc-project";
+        createdObjectUrlBlobs.push(blob);
+        if (blob.type === "application/json") {
+          savedProjectBlob = blob;
+        }
+        return `blob:htcalc-${createdObjectUrlBlobs.length}`;
       }),
     });
     Object.defineProperty(URL, "revokeObjectURL", {
@@ -28,11 +41,17 @@ describe("Heat-Treat RFQ UI workflow", () => {
       value: vi.fn(),
     });
 
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clickedDownloadNames.push(this.download);
+      return undefined;
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    restoreProperty(URL, "createObjectURL", originalCreateObjectUrlDescriptor);
+    restoreProperty(URL, "revokeObjectURL", originalRevokeObjectUrlDescriptor);
+    restoreProperty(window, "print", originalPrintDescriptor);
     document.body.innerHTML = "";
   });
 
@@ -77,6 +96,18 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(reportText()).toContain("Price/lb");
     expect(reportText()).not.toContain("Price/kg");
     document.querySelector<HTMLButtonElement>("#report-close")?.click();
+
+    document.querySelector<HTMLButtonElement>('[data-quote-report-action="print"]')?.click();
+    await nextAnimationFrame();
+    expect(window.print).toHaveBeenCalledOnce();
+    document.querySelector<HTMLButtonElement>("#report-close")?.click();
+
+    document.querySelector<HTMLButtonElement>('[data-quote-report-action="markdown"]')?.click();
+    const markdownBlob = latestCreatedBlob();
+    const markdownText = await markdownBlob.text();
+    expect(clickedDownloadNames.at(-1)).toMatch(/\.md$/);
+    expect(markdownText).toContain("# HTCalc Heat-Treat RFQ Report");
+    expect(markdownText).toContain("## Quote Summary");
 
     document.querySelector<HTMLButtonElement>("#save-project")?.click();
     expect(savedProjectBlob).not.toBeNull();
@@ -141,6 +172,31 @@ function reportText(): string {
 
 function compactText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function latestCreatedBlob(): Blob {
+  const blob = createdObjectUrlBlobs.at(-1);
+  expect(blob).not.toBeUndefined();
+  return blob!;
+}
+
+async function nextAnimationFrame(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
+function restoreProperty(
+  target: object,
+  property: PropertyKey,
+  descriptor: PropertyDescriptor | undefined,
+): void {
+  if (descriptor) {
+    Object.defineProperty(target, property, descriptor);
+    return;
+  }
+
+  Reflect.deleteProperty(target, property);
 }
 
 async function loadProject(projectJson: string): Promise<void> {

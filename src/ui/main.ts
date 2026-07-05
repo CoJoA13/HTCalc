@@ -23,6 +23,7 @@ import {
   type HeatTreatQuoteInput,
   type HeatTreatQuoteRecommendation,
   type HeatTreatQuoteSourceMode,
+  type HeatTreatShopRates,
   type ImportedProcessAssumptions,
 } from "../quote/index.js";
 import {
@@ -68,6 +69,16 @@ import {
 import {
   quotePerWeightDisplay,
 } from "./quote-display.js";
+import {
+  deleteQuoteRatePreset,
+  findQuoteRatePreset,
+  loadQuoteRatePresetLibrary,
+  persistQuoteRatePresetLibrary,
+  saveQuoteRatePreset,
+  sortedQuoteRatePresets,
+  type QuoteRatePreset,
+  type QuoteRatePresetLibrary,
+} from "./quote-rate-presets.js";
 import {
   defaultHeatTreatQuoteInput,
   setHeatTreatQuoteInputValue,
@@ -294,6 +305,8 @@ const state: AdiProcessInput = {
 let steelAustemperingState: SteelAustemperingInput = defaultSteelAustemperingInput();
 let martemperingState: MartemperingInput = defaultMartemperingInput();
 let heatTreatQuoteState: HeatTreatQuoteInput = defaultHeatTreatQuoteInput();
+let quoteRatePresetLibrary: QuoteRatePresetLibrary = loadQuoteRatePresetLibrary();
+let selectedQuoteRatePresetId = "";
 let manualQuoteProcessSummary = heatTreatQuoteState.processSummary;
 let manualQuoteImportedProcess: ImportedProcessAssumptions = structuredClone(heatTreatQuoteState.importedProcess);
 let calibration: AdiModelCalibration = { ...DEFAULT_ADI_MODEL_CALIBRATION };
@@ -529,6 +542,7 @@ function plannedWorkspace(mode: ProcessMode): string {
 
 function quoteWorkspace(): string {
   const input = quoteWorkspaceInput();
+  normalizeSelectedQuoteRatePresetId();
 
   return `
     <section class="input-pane" aria-label="Heat-treat RFQ inputs">
@@ -561,6 +575,7 @@ function quoteWorkspace(): string {
 
       <div class="section-block">
         <div class="section-heading"><i class="ph ph-currency-dollar"></i><span>3. Shop Rates</span></div>
+        ${quoteRatePresetControls()}
         <div class="field-grid equipment-grid">
           ${quoteNumberField("shopRates.minimumLotCharge", "Minimum Lot", input.shopRates.minimumLotCharge, "1", "$")}
           ${quoteNumberField("shopRates.setupAdminCharge", "Setup/Admin", input.shopRates.setupAdminCharge, "1", "$")}
@@ -596,6 +611,50 @@ function quoteWorkspace(): string {
       <div id="recommendation"></div>
     </aside>
   `;
+}
+
+function quoteRatePresetControls(): string {
+  const presets = sortedQuoteRatePresets(quoteRatePresetLibrary);
+  const hasPresets = presets.length > 0;
+  const options = hasPresets
+    ? presets
+        .map((preset) => {
+          const selected = preset.id === selectedQuoteRatePresetId ? " selected" : "";
+          return `<option value="${escapeAttribute(preset.id)}"${selected}>${escapeHtml(preset.name)}</option>`;
+        })
+        .join("")
+    : `<option value="">No saved presets</option>`;
+  const disabled = hasPresets ? "" : " disabled";
+
+  return `
+    <div class="quote-rate-presets" data-quote-rate-presets>
+      <label class="field quote-rate-preset-field" for="quote-rate-preset-select">
+        <span class="field-label">Rate Preset</span>
+        <select id="quote-rate-preset-select"${disabled}>
+          ${options}
+        </select>
+      </label>
+      <div class="quote-rate-preset-actions">
+        <button class="secondary-action" type="button" data-quote-rate-preset-action="apply"${disabled}>
+          <i class="ph ph-check"></i><span>Apply</span>
+        </button>
+        <button class="secondary-action" type="button" data-quote-rate-preset-action="save">
+          <i class="ph ph-floppy-disk"></i><span>Save Current</span>
+        </button>
+        <button class="secondary-action" type="button" data-quote-rate-preset-action="delete"${disabled}>
+          <i class="ph ph-trash"></i><span>Delete</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function normalizeSelectedQuoteRatePresetId(): void {
+  const presets = sortedQuoteRatePresets(quoteRatePresetLibrary);
+  const selectedPresetIsValid = presets.some((preset) => preset.id === selectedQuoteRatePresetId);
+  selectedQuoteRatePresetId = selectedPresetIsValid
+    ? selectedQuoteRatePresetId
+    : presets[0]?.id ?? "";
 }
 
 function quoteWorkspaceInput(): HeatTreatQuoteInput {
@@ -877,6 +936,99 @@ function bindQuoteInputs(): void {
       renderQuoteRecommendation();
     });
   });
+
+  bindQuoteRatePresetControls();
+}
+
+function bindQuoteRatePresetControls(): void {
+  const select = document.querySelector<HTMLSelectElement>("#quote-rate-preset-select");
+  select?.addEventListener("change", () => {
+    selectedQuoteRatePresetId = select.value;
+  });
+
+  document
+    .querySelector<HTMLButtonElement>('[data-quote-rate-preset-action="apply"]')
+    ?.addEventListener("click", applySelectedQuoteRatePreset);
+  document
+    .querySelector<HTMLButtonElement>('[data-quote-rate-preset-action="save"]')
+    ?.addEventListener("click", saveCurrentQuoteRatePreset);
+  document
+    .querySelector<HTMLButtonElement>('[data-quote-rate-preset-action="delete"]')
+    ?.addEventListener("click", deleteSelectedQuoteRatePreset);
+}
+
+function selectedQuoteRatePreset(): QuoteRatePreset | undefined {
+  return findQuoteRatePreset(quoteRatePresetLibrary, selectedQuoteRatePresetId);
+}
+
+function applySelectedQuoteRatePreset(): void {
+  const preset = selectedQuoteRatePreset();
+  if (!preset) {
+    showProjectStatus("Select a rate preset before applying.", true);
+    return;
+  }
+
+  replaceQuoteShopRates(preset.shopRates);
+  renderWorkspace();
+  showProjectStatus(`Applied rate preset "${preset.name}".`);
+}
+
+function saveCurrentQuoteRatePreset(): void {
+  const enteredName = window.prompt("Rate preset name", selectedQuoteRatePreset()?.name ?? "");
+  if (enteredName === null) {
+    return;
+  }
+
+  const name = enteredName.trim();
+  if (!name) {
+    showProjectStatus("Rate preset name was blank; no rates saved.", true);
+    return;
+  }
+
+  try {
+    const result = saveQuoteRatePreset(quoteRatePresetLibrary, name, heatTreatQuoteState.shopRates);
+    if (!persistQuoteRatePresetLibrary(result.library)) {
+      showProjectStatus("Rate preset could not be saved in this browser.", true);
+      return;
+    }
+
+    quoteRatePresetLibrary = result.library;
+    selectedQuoteRatePresetId = result.preset.id;
+    renderWorkspace();
+    showProjectStatus(`Saved rate preset "${result.preset.name}".`);
+  } catch (error) {
+    showProjectStatus(error instanceof Error ? error.message : "Could not save rate preset.", true);
+  }
+}
+
+function deleteSelectedQuoteRatePreset(): void {
+  const preset = selectedQuoteRatePreset();
+  if (!preset) {
+    showProjectStatus("Select a rate preset before deleting.", true);
+    return;
+  }
+
+  if (!window.confirm(`Delete rate preset "${preset.name}"?`)) {
+    return;
+  }
+
+  const nextLibrary = deleteQuoteRatePreset(quoteRatePresetLibrary, preset.id);
+  if (!persistQuoteRatePresetLibrary(nextLibrary)) {
+    showProjectStatus("Rate preset could not be deleted in this browser.", true);
+    return;
+  }
+
+  quoteRatePresetLibrary = nextLibrary;
+  normalizeSelectedQuoteRatePresetId();
+  renderWorkspace();
+  showProjectStatus(`Deleted rate preset "${preset.name}".`);
+}
+
+function replaceQuoteShopRates(shopRates: HeatTreatShopRates): void {
+  heatTreatQuoteState = {
+    ...heatTreatQuoteState,
+    shopRates: structuredClone(shopRates),
+  };
 }
 
 function syncManualQuoteSource(): HeatTreatQuoteInput {

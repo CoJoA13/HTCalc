@@ -3,17 +3,22 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { QUOTE_RATE_PRESETS_STORAGE_KEY } from "../src/ui/quote-rate-presets.js";
 
 let savedProjectBlob: Blob | null = null;
 let createdObjectUrlBlobs: Blob[] = [];
 let clickedDownloadNames: string[] = [];
 let originalCreateObjectUrlDescriptor: PropertyDescriptor | undefined;
 let originalRevokeObjectUrlDescriptor: PropertyDescriptor | undefined;
+let originalLocalStorageDescriptor: PropertyDescriptor | undefined;
 let originalPrintDescriptor: PropertyDescriptor | undefined;
 
 describe("Heat-Treat RFQ UI workflow", () => {
   beforeEach(() => {
     vi.resetModules();
+    originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
+    installLocalStorageShim();
+    window.localStorage.clear();
     savedProjectBlob = null;
     createdObjectUrlBlobs = [];
     clickedDownloadNames = [];
@@ -48,9 +53,11 @@ describe("Heat-Treat RFQ UI workflow", () => {
   });
 
   afterEach(() => {
+    window.localStorage.clear();
     vi.restoreAllMocks();
     restoreProperty(URL, "createObjectURL", originalCreateObjectUrlDescriptor);
     restoreProperty(URL, "revokeObjectURL", originalRevokeObjectUrlDescriptor);
+    restoreProperty(window, "localStorage", originalLocalStorageDescriptor);
     restoreProperty(window, "print", originalPrintDescriptor);
     document.body.innerHTML = "";
   });
@@ -130,6 +137,87 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(metricStripText()).not.toContain("Price/kg");
     expect(document.querySelector('[data-quote-report-action="open"]')).not.toBeNull();
   });
+
+  it("saves, applies, and preserves RFQ shop-rate presets through project files", async () => {
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Standard RFQ");
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("lot.quantity", "25");
+    setQuoteNumber("lot.totalWeightKg", "100");
+    setQuoteNumber("lot.loadCapacityKg", "100");
+    setQuoteNumber("lot.laborHoursPerLoad", "1");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.setupAdminCharge", "100");
+    setQuoteNumber("shopRates.laborRatePerHour", "90");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    setQuoteNumber("shopRates.bathQuenchRatePerHour", "95");
+    setQuoteNumber("shopRates.temperFurnaceRatePerHour", "80");
+    setQuoteNumber("shopRates.inspectionBaseCharge", "60");
+    setQuoteNumber("shopRates.consumablesPerKg", "0.55");
+    setQuoteNumber("shopRates.handlingPackagingCharge", "30");
+    setQuoteNumber("shopRates.overheadPercent", "18");
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    clickRatePresetAction("save");
+
+    expect(promptSpy).toHaveBeenCalledOnce();
+    expect(ratePresetSelectText()).toContain("Standard RFQ");
+
+    setQuoteNumber("shopRates.minimumLotCharge", "50");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "1");
+    expect(quoteControl<HTMLInputElement>("shopRates.minimumLotCharge").value).toBe("50");
+    expect(quoteControl<HTMLInputElement>("shopRates.furnaceRatePerHour").value).toBe("1");
+
+    clickRatePresetAction("apply");
+
+    expect(quoteControl<HTMLInputElement>("shopRates.minimumLotCharge").value).toBe("500");
+    expect(quoteControl<HTMLInputElement>("shopRates.furnaceRatePerHour").value).toBe("125");
+    expect(recommendationText()).toContain("Heat-Treat RFQ");
+
+    document.querySelector<HTMLButtonElement>("#save-project")?.click();
+    expect(savedProjectBlob).not.toBeNull();
+    const savedProjectJson = await savedProjectBlob!.text();
+    expect(JSON.parse(savedProjectJson).heatTreatQuote.input.shopRates).toMatchObject({
+      minimumLotCharge: 500,
+      furnaceRatePerHour: 125,
+      targetMarginPercent: 22,
+    });
+
+    setQuoteNumber("shopRates.furnaceRatePerHour", "3");
+    await loadProject(savedProjectJson);
+
+    expect(quoteControl<HTMLInputElement>("shopRates.furnaceRatePerHour").value).toBe("125");
+    expect(recommendationText()).toContain("Heat-Treat RFQ");
+  });
+
+  it("deletes RFQ shop-rate presets without changing current quote rates", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Delete Me RFQ");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+
+    clickRatePresetAction("save");
+    expect(ratePresetSelectText()).toContain("Delete Me RFQ");
+
+    setQuoteNumber("shopRates.minimumLotCharge", "50");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "1");
+
+    clickRatePresetAction("delete");
+
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(quoteControl<HTMLInputElement>("shopRates.minimumLotCharge").value).toBe("50");
+    expect(quoteControl<HTMLInputElement>("shopRates.furnaceRatePerHour").value).toBe("1");
+    expect(ratePresetSelectText()).toContain("No saved presets");
+    expect(ratePresetSelect().disabled).toBe(true);
+    expect(ratePresetActionButton("apply").disabled).toBe(true);
+    expect(ratePresetActionButton("delete").disabled).toBe(true);
+    expect(JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}").presets).toEqual([]);
+  });
 });
 
 function clickMode(modeId: string): void {
@@ -148,6 +236,26 @@ function setQuoteNumber(path: string, value: string): void {
   const input = quoteControl<HTMLInputElement>(path);
   input.value = value;
   input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function clickRatePresetAction(action: "apply" | "save" | "delete"): void {
+  ratePresetActionButton(action).click();
+}
+
+function ratePresetSelectText(): string {
+  return compactText(ratePresetSelect().textContent ?? "");
+}
+
+function ratePresetSelect(): HTMLSelectElement {
+  const select = document.querySelector<HTMLSelectElement>("#quote-rate-preset-select");
+  expect(select).not.toBeNull();
+  return select!;
+}
+
+function ratePresetActionButton(action: "apply" | "save" | "delete"): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>(`[data-quote-rate-preset-action="${action}"]`);
+  expect(button).not.toBeNull();
+  return button!;
 }
 
 function switchUnits(unitSystem: "imperial" | "metric"): void {
@@ -203,6 +311,34 @@ function restoreProperty(
   }
 
   Reflect.deleteProperty(target, property);
+}
+
+function installLocalStorageShim(): void {
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: createStorageShim(),
+  });
+}
+
+function createStorageShim(): Storage {
+  const items = new Map<string, string>();
+
+  return {
+    get length() {
+      return items.size;
+    },
+    clear: vi.fn(() => {
+      items.clear();
+    }),
+    getItem: vi.fn((key: string) => items.get(key) ?? null),
+    key: vi.fn((index: number) => Array.from(items.keys())[index] ?? null),
+    removeItem: vi.fn((key: string) => {
+      items.delete(key);
+    }),
+    setItem: vi.fn((key: string, value: string) => {
+      items.set(key, String(value));
+    }),
+  };
 }
 
 async function loadProject(projectJson: string): Promise<void> {

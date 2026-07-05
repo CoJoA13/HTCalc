@@ -226,6 +226,71 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(quoteReviewReadinessText()).toContain("Custom rates");
   });
 
+  it("refreshes RFQ review open checks when validation checklist items change", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("lot.quantity", "30");
+    setQuoteNumber("lot.totalWeightKg", "150");
+    setQuoteNumber("lot.loadCapacityKg", "75");
+    setQuoteNumber("lot.laborHoursPerLoad", "0.75");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.setupAdminCharge", "100");
+    setQuoteNumber("shopRates.laborRatePerHour", "90");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    setQuoteNumber("shopRates.bathQuenchRatePerHour", "95");
+    setQuoteNumber("shopRates.temperFurnaceRatePerHour", "80");
+    setQuoteNumber("shopRates.inspectionBaseCharge", "60");
+    setQuoteNumber("shopRates.consumablesPerKg", "0.55");
+    setQuoteNumber("shopRates.handlingPackagingCharge", "30");
+    setQuoteNumber("shopRates.overheadPercent", "18");
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    const openCheckCount = uncheckedValidationChecklistChecks().length;
+    expect(openCheckCount).toBeGreaterThan(0);
+    expect(quoteReviewReadinessText()).toContain(`Open checks ${openCheckCount}`);
+
+    const firstOpenCheck = uncheckedValidationChecklistChecks()[0]!;
+    firstOpenCheck.checked = true;
+    firstOpenCheck.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(quoteReviewReadinessText()).toContain(`Open checks ${openCheckCount - 1}`);
+  });
+
+  it("refreshes RFQ rate status when selecting a non-matching preset without applying it", async () => {
+    vi.spyOn(window, "prompt")
+      .mockReturnValueOnce("Preset A")
+      .mockReturnValueOnce("Preset B");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.setupAdminCharge", "100");
+    setQuoteNumber("shopRates.laborRatePerHour", "90");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    setQuoteNumber("shopRates.bathQuenchRatePerHour", "95");
+    setQuoteNumber("shopRates.temperFurnaceRatePerHour", "80");
+    setQuoteNumber("shopRates.inspectionBaseCharge", "60");
+    setQuoteNumber("shopRates.consumablesPerKg", "0.55");
+    setQuoteNumber("shopRates.handlingPackagingCharge", "30");
+    setQuoteNumber("shopRates.overheadPercent", "18");
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    clickRatePresetAction("save");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "130");
+    clickRatePresetAction("save");
+
+    expect(quoteAccordionStatusText("rates")).toContain("Preset B");
+    expect(quoteReviewReadinessText()).toContain("Preset B");
+
+    selectRatePresetByName("Preset A");
+
+    expect(quoteAccordionStatusText("rates")).toContain("Custom rates");
+    expect(quoteAccordionStatusText("rates")).not.toContain("Preset B");
+    expect(quoteReviewReadinessText()).toContain("Custom rates");
+    expect(quoteReviewReadinessText()).not.toContain("Preset B");
+  });
+
   it("deletes RFQ shop-rate presets without changing current quote rates", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("Delete Me RFQ");
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -492,7 +557,11 @@ function quoteAccordionStatusText(section: QuoteAccordionSection): string {
 }
 
 function quoteReviewReadinessText(): string {
-  return compactText(document.querySelector("[data-quote-review-readiness]")?.textContent ?? "");
+  const readiness = document.querySelector("[data-quote-review-readiness]");
+  return compactText(Array
+    .from(readiness?.querySelectorAll("dt, dd, .quote-review-note") ?? [])
+    .map((element) => element.textContent ?? "")
+    .join(" "));
 }
 
 type RatePresetAction = "apply" | "save" | "import" | "export" | "delete";
@@ -509,6 +578,20 @@ function ratePresetSelect(): HTMLSelectElement {
   const select = document.querySelector<HTMLSelectElement>("#quote-rate-preset-select");
   expect(select).not.toBeNull();
   return select!;
+}
+
+function selectRatePresetByName(name: string): void {
+  const select = ratePresetSelect();
+  const option = Array.from(select.options).find((item) => item.textContent === name);
+  expect(option).not.toBeUndefined();
+  select.value = option!.value;
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function uncheckedValidationChecklistChecks(): HTMLInputElement[] {
+  return Array
+    .from(document.querySelectorAll<HTMLInputElement>("[data-checklist-check]"))
+    .filter((control) => !control.checked);
 }
 
 function projectStatusText(): string {

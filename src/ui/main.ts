@@ -816,16 +816,18 @@ function quoteImportedAssumptionsSummary(input: HeatTreatQuoteInput): string {
 
 function quoteReviewReadinessPanel(readiness: QuoteReviewReadiness): string {
   return `
-    <dl class="quote-review-readiness" data-quote-review-readiness>
-      <div class="quote-review-row"><dt>Source</dt><dd>${escapeHtml(readiness.sourceLabel)}</dd></div>
-      <div class="quote-review-row"><dt>Process</dt><dd>${escapeHtml(readiness.processLabel)}</dd></div>
-      <div class="quote-review-row"><dt>Rates</dt><dd>${escapeHtml(readiness.ratePresetLabel)}</dd></div>
-      <div class="quote-review-row"><dt>Warnings</dt><dd>${readiness.warningCount}</dd></div>
-      <div class="quote-review-row"><dt>Open checks</dt><dd>${readiness.openCheckCount}</dd></div>
-      <div class="quote-review-note">
+    <div class="quote-review-readiness" data-quote-review-readiness>
+      <dl class="quote-review-list">
+        <div class="quote-review-row"><dt>Source</dt><dd>${escapeHtml(readiness.sourceLabel)}</dd></div>
+        <div class="quote-review-row"><dt>Process</dt><dd>${escapeHtml(readiness.processLabel)}</dd></div>
+        <div class="quote-review-row"><dt>Rates</dt><dd>${escapeHtml(readiness.ratePresetLabel)}</dd></div>
+        <div class="quote-review-row"><dt>Warnings</dt><dd>${readiness.warningCount}</dd></div>
+        <div class="quote-review-row"><dt>Open checks</dt><dd>${readiness.openCheckCount}</dd></div>
+      </dl>
+      <p class="quote-review-note">
         Heat-treatment service pricing only. Excludes material, machining, outside services, freight, tax, and contract terms unless manually adjusted.
-      </div>
-    </dl>
+      </p>
+    </div>
   `;
 }
 
@@ -1184,6 +1186,7 @@ function bindQuoteRatePresetControls(): void {
   const importInput = document.querySelector<HTMLInputElement>("#quote-rate-preset-import-input");
   select?.addEventListener("change", () => {
     selectedQuoteRatePresetId = select.value;
+    refreshQuoteAccordionSummary();
   });
 
   document
@@ -2331,6 +2334,9 @@ function updateChecklistItem(
       item.id === id ? { ...item, ...patch } : item
     ),
   });
+  if (modeId === "heat-treat-rfq") {
+    refreshQuoteAccordionSummary();
+  }
 }
 
 function setValidationChecklist(modeId: ProcessModeId, checklist: ValidationChecklistState): void {

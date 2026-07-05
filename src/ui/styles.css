@@ -408,14 +408,18 @@ textarea {
 
 .quote-review-readiness {
   display: grid;
+  gap: 10px;
+}
+
+.quote-review-list {
+  display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
   margin: 0;
 }
 
 .quote-review-note {
-  grid-column: 1 / -1;
-  margin-top: 2px;
+  margin: 0;
   padding-top: 10px;
   border-top: 1px solid #dbe3ec;
   color: #526074;
@@ -1330,7 +1334,7 @@ button:focus-visible {
   }
 
   .quote-assumption-summary,
-  .quote-review-readiness {
+  .quote-review-list {
     grid-template-columns: 1fr;
   }
 

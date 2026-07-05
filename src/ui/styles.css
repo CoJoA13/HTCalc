@@ -286,6 +286,26 @@ textarea {
   grid-template-columns: repeat(4, minmax(160px, 1fr));
 }
 
+.quote-rate-presets {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.quote-rate-preset-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quote-rate-preset-actions .secondary-action {
+  height: 38px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
 .metadata-grid {
   grid-template-columns: repeat(2, minmax(180px, 1fr));
 }
@@ -1126,6 +1146,14 @@ button:focus-visible {
   .metadata-grid,
   .metric-strip {
     grid-template-columns: 1fr;
+  }
+
+  .quote-rate-presets {
+    grid-template-columns: 1fr;
+  }
+
+  .quote-rate-preset-actions .secondary-action {
+    flex: 1 1 120px;
   }
 
   .input-pane,

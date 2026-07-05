@@ -8,6 +8,7 @@ import type {
 } from "./project-state.js";
 import {
   quotePerWeightDisplay,
+  quoteWeightDisplay,
 } from "./quote-display.js";
 import type {
   UnitSystem,
@@ -68,6 +69,10 @@ export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): stri
   const perWeight = quotePerWeightDisplay(report.recommendation.pricePerKg, report.unitSystem);
   const perWeightLabel = `Price per ${perWeight.unit}`;
   const perWeightValue = perWeight.value === null ? "Unavailable" : formatMoney(perWeight.value);
+  const totalWeight = quoteWeightDisplay(report.recommendation.totalWeightKg, report.unitSystem);
+  const totalWeightValue = totalWeight.value === null
+    ? "Unavailable"
+    : `${formatNumber(totalWeight.value)} ${totalWeight.unit}`;
   const customerSummaryLines = report.recommendation.customerSummaryLines.length > 0
     ? displayQuoteCustomerSummaryLines(report.recommendation, report.unitSystem).map((line) => `- ${line}`)
     : ["- No customer quote summary lines generated."];
@@ -88,7 +93,7 @@ export function serializeQuoteReportMarkdown(report: QuoteReportViewModel): stri
     `Process source: ${report.recommendation.processSummary}`,
     `Source mode: ${report.recommendation.sourceMode}`,
     `Quantity: ${formatNumber(report.input.lot.quantity)}`,
-    `Total weight: ${report.recommendation.totalWeightKg === null ? "Unavailable" : `${formatNumber(report.recommendation.totalWeightKg)} kg`}`,
+    `Total weight: ${totalWeightValue}`,
     `Cycle count: ${report.recommendation.cycleCount ?? "Manual"}`,
     `Lot price: ${formatMoney(report.recommendation.lotPrice)}`,
     `Unit price: ${formatMoney(report.recommendation.unitPrice)}`,

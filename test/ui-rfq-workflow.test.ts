@@ -457,6 +457,32 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(stored.presets).toHaveLength(1);
   });
 
+  it("keeps keyboard focus inside RFQ preset dialogs", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    openSaveRatePresetDialog();
+
+    quotePresetDialogAction("confirm").focus();
+    quotePresetDialogAction("confirm").dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    expect(document.activeElement).toBe(quotePresetDialogInput());
+
+    quotePresetDialogInput().focus();
+    quotePresetDialogInput().dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    }));
+
+    expect(document.activeElement).toBe(quotePresetDialogAction("confirm"));
+  });
+
   it("validates RFQ preset names inside the save dialog without calling prompt", async () => {
     const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("Dialog RFQ");
     await import("../src/ui/main.js");
@@ -520,6 +546,27 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(stored.presets[0]?.shopRates.minimumLotCharge).toBe(725);
     expect(stored.presets[0]?.shopRates.furnaceRatePerHour).toBe(155);
     expect(ratePresetSelectText()).toContain("existing rfq");
+  });
+
+  it("does not show RFQ preset update copy when storage would create a whitespace-distinct preset", async () => {
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    saveRatePreset("Existing RFQ");
+    openSaveRatePresetDialog();
+
+    const input = quotePresetDialogInput();
+    input.value = "Existing  RFQ";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(quotePresetDialogText()).not.toContain("This will update the existing preset.");
+    expect(quotePresetDialogAction("confirm").textContent).toContain("Save Preset");
+
+    quotePresetDialogAction("confirm").click();
+
+    const stored = JSON.parse(window.localStorage.getItem(QUOTE_RATE_PRESETS_STORAGE_KEY) ?? "{}") as QuoteRatePresetLibrary;
+    expect(stored.presets).toHaveLength(2);
+    expect(stored.presets.map((preset) => preset.name)).toEqual(["Existing  RFQ", "Existing RFQ"]);
   });
 
   it("exports RFQ shop-rate presets as a preset library JSON file", async () => {

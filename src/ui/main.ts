@@ -314,6 +314,16 @@ let selectedQuoteRatePresetId = "";
 
 type QuoteAccordionSectionId = "source" | "lot" | "rates" | "adjustments" | "review";
 type QuoteValidationResultStatus = "ready" | "incomplete" | "invalid" | "stale";
+type QuoteRatePresetDialogMode = "save" | "delete";
+
+interface QuoteRatePresetDialogState {
+  readonly mode: QuoteRatePresetDialogMode;
+  readonly presetId: string;
+  readonly name: string;
+  readonly message: string;
+  readonly isError: boolean;
+  readonly returnFocus: HTMLElement | null;
+}
 
 interface QuoteValidationViewState {
   readonly fieldMessages: Readonly<Record<string, string>>;
@@ -350,6 +360,7 @@ const emptyQuoteValidationViewState: QuoteValidationViewState = {
 
 let quoteValidationViewState: QuoteValidationViewState = emptyQuoteValidationViewState;
 let lastValidQuoteRecommendation: HeatTreatQuoteRecommendation | null = null;
+let quoteRatePresetDialogState: QuoteRatePresetDialogState | null = null;
 
 let manualQuoteProcessSummary = heatTreatQuoteState.processSummary;
 let manualQuoteImportedProcess: ImportedProcessAssumptions = structuredClone(heatTreatQuoteState.importedProcess);
@@ -455,6 +466,18 @@ app.innerHTML = `
         </div>
       </div>
       <article class="report-document" id="report-document"></article>
+    </section>
+  </div>
+
+  <div class="quote-rate-preset-dialog-backdrop" id="quote-rate-preset-dialog-backdrop" data-quote-rate-preset-dialog hidden>
+    <section
+      class="quote-rate-preset-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="quote-rate-preset-dialog-title"
+      aria-describedby="quote-rate-preset-dialog-description"
+    >
+      <div id="quote-rate-preset-dialog-content"></div>
     </section>
   </div>
 `;
@@ -1216,6 +1239,8 @@ bindHelpButtons();
 bindProjectActions();
 bindSettings();
 bindReportDialog();
+bindQuoteRatePresetDialog();
+renderQuoteRatePresetDialog();
 renderRecommendation();
 
 function bindAdiInputs(): void {
@@ -1374,7 +1399,9 @@ function bindQuoteRatePresetControls(): void {
     ?.addEventListener("click", applySelectedQuoteRatePreset);
   document
     .querySelector<HTMLButtonElement>('[data-quote-rate-preset-action="save"]')
-    ?.addEventListener("click", saveCurrentQuoteRatePreset);
+    ?.addEventListener("click", (event) => {
+      openQuoteRatePresetSaveDialog(event.currentTarget instanceof HTMLElement ? event.currentTarget : null);
+    });
   document
     .querySelector<HTMLButtonElement>('[data-quote-rate-preset-action="import"]')
     ?.addEventListener("click", () => {
@@ -1385,10 +1412,261 @@ function bindQuoteRatePresetControls(): void {
     ?.addEventListener("click", exportQuoteRatePresets);
   document
     .querySelector<HTMLButtonElement>('[data-quote-rate-preset-action="delete"]')
-    ?.addEventListener("click", deleteSelectedQuoteRatePreset);
+    ?.addEventListener("click", (event) => {
+      openQuoteRatePresetDeleteDialog(event.currentTarget instanceof HTMLElement ? event.currentTarget : null);
+    });
   importInput?.addEventListener("change", () => {
     void importQuoteRatePresets(importInput);
   });
+}
+
+function openQuoteRatePresetSaveDialog(returnFocus: HTMLElement | null): void {
+  const preset = selectedQuoteRatePreset();
+  quoteRatePresetDialogState = {
+    mode: "save",
+    presetId: preset?.id ?? "",
+    name: preset?.name ?? "",
+    message: "",
+    isError: false,
+    returnFocus,
+  };
+  renderQuoteRatePresetDialog();
+  focusQuoteRatePresetDialogNameInput();
+}
+
+function openQuoteRatePresetDeleteDialog(returnFocus: HTMLElement | null): void {
+  const preset = selectedQuoteRatePreset();
+  if (!preset) {
+    showProjectStatus("Select a rate preset before deleting.", true);
+    return;
+  }
+
+  quoteRatePresetDialogState = {
+    mode: "delete",
+    presetId: preset.id,
+    name: quoteRatePresetDisplayName(preset),
+    message: "",
+    isError: false,
+    returnFocus,
+  };
+  renderQuoteRatePresetDialog();
+  focusQuoteRatePresetDialogCancelButton();
+}
+
+function closeQuoteRatePresetDialog(): void {
+  const returnFocus = quoteRatePresetDialogState?.returnFocus ?? null;
+  quoteRatePresetDialogState = null;
+  renderQuoteRatePresetDialog();
+  if (returnFocus?.isConnected) {
+    returnFocus.focus();
+  }
+}
+
+function renderQuoteRatePresetDialog(): void {
+  const backdrop = document.querySelector<HTMLDivElement>("#quote-rate-preset-dialog-backdrop");
+  const content = document.querySelector<HTMLDivElement>("#quote-rate-preset-dialog-content");
+  if (!backdrop || !content) {
+    return;
+  }
+
+  const state = quoteRatePresetDialogState;
+  backdrop.hidden = !state;
+  content.innerHTML = state
+    ? state.mode === "save"
+      ? quoteRatePresetSaveDialogContent(state)
+      : quoteRatePresetDeleteDialogContent(state)
+    : "";
+
+  if (state) {
+    bindQuoteRatePresetDialogContent();
+  }
+}
+
+function quoteRatePresetSaveDialogContent(state: QuoteRatePresetDialogState): string {
+  const existingPreset = quoteRatePresetByName(state.name);
+  const isUpdate = Boolean(existingPreset);
+  const message = state.message.trim();
+
+  return `
+    <div class="quote-rate-preset-dialog-header">
+      <div>
+        <div class="eyebrow">RFQ Preset</div>
+        <h2 id="quote-rate-preset-dialog-title">Save Rate Preset</h2>
+      </div>
+    </div>
+    <p id="quote-rate-preset-dialog-description">Save the current shop-rate table as a browser-local RFQ preset.</p>
+    <label class="field" for="quote-rate-preset-dialog-name">
+      <span class="field-label">Preset Name</span>
+      <input
+        id="quote-rate-preset-dialog-name"
+        data-quote-rate-preset-dialog-name
+        type="text"
+        value="${escapeAttribute(state.name)}"
+        aria-describedby="quote-rate-preset-dialog-message"
+        ${state.isError ? `aria-invalid="true"` : ""}
+      />
+    </label>
+    ${isUpdate ? `<p class="field-help">This will update the existing preset.</p>` : ""}
+    <p
+      id="quote-rate-preset-dialog-message"
+      data-quote-rate-preset-dialog-message
+      ${state.isError ? `role="alert"` : ""}
+      ${message ? "" : "hidden"}
+    >${escapeHtml(message)}</p>
+    <div class="quote-rate-preset-dialog-actions">
+      <button class="secondary-action" type="button" data-quote-rate-preset-dialog-action="cancel">Cancel</button>
+      <button class="primary-action" type="button" data-quote-rate-preset-dialog-action="confirm">${isUpdate ? "Update Preset" : "Save Preset"}</button>
+    </div>
+  `;
+}
+
+function quoteRatePresetDeleteDialogContent(state: QuoteRatePresetDialogState): string {
+  const message = state.message.trim();
+
+  return `
+    <div class="quote-rate-preset-dialog-header">
+      <div>
+        <div class="eyebrow">RFQ Preset</div>
+        <h2 id="quote-rate-preset-dialog-title">Delete Rate Preset</h2>
+      </div>
+    </div>
+    <p id="quote-rate-preset-dialog-description">Delete "${escapeHtml(state.name)}" from saved RFQ presets. Current quote rates will not change.</p>
+    <p
+      id="quote-rate-preset-dialog-message"
+      data-quote-rate-preset-dialog-message
+      ${state.isError ? `role="alert"` : ""}
+      ${message ? "" : "hidden"}
+    >${escapeHtml(message)}</p>
+    <div class="quote-rate-preset-dialog-actions">
+      <button class="secondary-action" type="button" data-quote-rate-preset-dialog-action="cancel">Cancel</button>
+      <button class="primary-action destructive-action" type="button" data-quote-rate-preset-dialog-action="confirm">Delete Preset</button>
+    </div>
+  `;
+}
+
+function bindQuoteRatePresetDialog(): void {
+  const backdrop = document.querySelector<HTMLDivElement>("#quote-rate-preset-dialog-backdrop");
+  backdrop?.addEventListener("click", (event) => {
+    if (event.target === backdrop) {
+      closeQuoteRatePresetDialog();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && quoteRatePresetDialogState) {
+      closeQuoteRatePresetDialog();
+      return;
+    }
+
+    if (event.key === "Tab" && quoteRatePresetDialogState) {
+      trapQuoteRatePresetDialogFocus(event);
+    }
+  });
+}
+
+function trapQuoteRatePresetDialogFocus(event: KeyboardEvent): void {
+  const focusableControls = quoteRatePresetDialogFocusableControls();
+  if (focusableControls.length === 0) {
+    return;
+  }
+
+  const firstControl = focusableControls[0]!;
+  const lastControl = focusableControls[focusableControls.length - 1]!;
+  const activeElement = document.activeElement;
+  const activeIndex = activeElement instanceof HTMLElement ? focusableControls.indexOf(activeElement) : -1;
+
+  if (event.shiftKey) {
+    if (activeIndex <= 0) {
+      event.preventDefault();
+      lastControl.focus();
+    }
+    return;
+  }
+
+  if (activeIndex === -1 || activeIndex === focusableControls.length - 1) {
+    event.preventDefault();
+    firstControl.focus();
+  }
+}
+
+function quoteRatePresetDialogFocusableControls(): HTMLElement[] {
+  const backdrop = document.querySelector<HTMLDivElement>("#quote-rate-preset-dialog-backdrop");
+  if (!backdrop || backdrop.hidden) {
+    return [];
+  }
+
+  return Array
+    .from(backdrop.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]"))
+    .filter((element) => {
+      if (element.hidden || element.getAttribute("aria-hidden") === "true") {
+        return false;
+      }
+
+      if (element.getAttribute("tabindex") === "-1") {
+        return false;
+      }
+
+      return !(element instanceof HTMLButtonElement || element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) || !element.disabled;
+    });
+}
+
+function bindQuoteRatePresetDialogContent(): void {
+  document
+    .querySelector<HTMLInputElement>("[data-quote-rate-preset-dialog-name]")
+    ?.addEventListener("input", (event) => {
+      const input = event.currentTarget;
+      if (!(input instanceof HTMLInputElement) || !quoteRatePresetDialogState) {
+        return;
+      }
+
+      const selectionStart = input.selectionStart ?? input.value.length;
+      const selectionEnd = input.selectionEnd ?? input.value.length;
+      quoteRatePresetDialogState = {
+        ...quoteRatePresetDialogState,
+        name: input.value,
+        message: "",
+        isError: false,
+      };
+      renderQuoteRatePresetDialog();
+      focusQuoteRatePresetDialogNameInput(selectionStart, selectionEnd);
+    });
+
+  document
+    .querySelector<HTMLButtonElement>('[data-quote-rate-preset-dialog-action="cancel"]')
+    ?.addEventListener("click", closeQuoteRatePresetDialog);
+  document
+    .querySelector<HTMLButtonElement>('[data-quote-rate-preset-dialog-action="confirm"]')
+    ?.addEventListener("click", confirmQuoteRatePresetDialog);
+}
+
+function confirmQuoteRatePresetDialog(): void {
+  if (quoteRatePresetDialogState?.mode === "save") {
+    confirmQuoteRatePresetSave();
+    return;
+  }
+
+  if (quoteRatePresetDialogState?.mode === "delete") {
+    confirmQuoteRatePresetDelete();
+  }
+}
+
+function focusQuoteRatePresetDialogNameInput(selectionStart?: number, selectionEnd?: number): void {
+  const input = document.querySelector<HTMLInputElement>("[data-quote-rate-preset-dialog-name]");
+  if (!input) {
+    return;
+  }
+
+  const fallbackPosition = input.value.length;
+  const nextSelectionStart = Math.min(selectionStart ?? fallbackPosition, fallbackPosition);
+  const nextSelectionEnd = Math.min(selectionEnd ?? nextSelectionStart, fallbackPosition);
+  input.focus();
+  input.setSelectionRange(nextSelectionStart, nextSelectionEnd);
+}
+
+function focusQuoteRatePresetDialogCancelButton(): void {
+  document
+    .querySelector<HTMLButtonElement>('[data-quote-rate-preset-dialog-action="cancel"]')
+    ?.focus();
 }
 
 function selectedQuoteRatePreset(): QuoteRatePreset | undefined {
@@ -1432,31 +1710,68 @@ function quoteRatePresetDisplayName(preset: QuoteRatePreset): string {
   return preset.name.trim();
 }
 
-function saveCurrentQuoteRatePreset(): void {
-  const enteredName = window.prompt("Rate preset name", selectedQuoteRatePreset()?.name ?? "");
-  if (enteredName === null) {
+function quoteRatePresetByName(name: string): QuoteRatePreset | undefined {
+  const normalizedName = normalizeQuoteRatePresetName(name);
+  if (!normalizedName) {
+    return undefined;
+  }
+
+  return quoteRatePresetLibrary.presets.find((preset) => normalizeQuoteRatePresetName(preset.name) === normalizedName);
+}
+
+function normalizeQuoteRatePresetName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function confirmQuoteRatePresetSave(): void {
+  const state = quoteRatePresetDialogState;
+  if (!state) {
     return;
   }
 
-  const name = enteredName.trim();
+  const name = state.name.trim();
   if (!name) {
-    showProjectStatus("Preset name is required. No rates were saved.", true);
+    quoteRatePresetDialogState = {
+      ...state,
+      message: "Preset name is required.",
+      isError: true,
+    };
+    renderQuoteRatePresetDialog();
+    focusQuoteRatePresetDialogNameInput();
     return;
   }
 
   try {
     const result = saveQuoteRatePreset(quoteRatePresetLibrary, name, heatTreatQuoteState.shopRates);
     if (!persistQuoteRatePresetLibrary(result.library)) {
-      showProjectStatus("Could not save preset in this browser. Existing presets were unchanged.", true);
+      const message = "Could not save preset in this browser. Existing presets were unchanged.";
+      quoteRatePresetDialogState = {
+        ...state,
+        message,
+        isError: true,
+      };
+      renderQuoteRatePresetDialog();
+      focusQuoteRatePresetDialogNameInput();
+      showProjectStatus(message, true);
       return;
     }
 
     quoteRatePresetLibrary = result.library;
     selectedQuoteRatePresetId = result.preset.id;
+    quoteRatePresetDialogState = null;
     renderWorkspace();
+    renderQuoteRatePresetDialog();
     showProjectStatus(`Saved rate preset "${result.preset.name}".`);
   } catch (error) {
-    showProjectStatus(error instanceof Error ? error.message : "Could not save rate preset.", true);
+    const message = error instanceof Error ? error.message : "Could not save rate preset.";
+    quoteRatePresetDialogState = {
+      ...state,
+      message,
+      isError: true,
+    };
+    renderQuoteRatePresetDialog();
+    focusQuoteRatePresetDialogNameInput();
+    showProjectStatus(message, true);
   }
 }
 
@@ -1513,26 +1828,37 @@ async function importQuoteRatePresets(input: HTMLInputElement): Promise<void> {
   }
 }
 
-function deleteSelectedQuoteRatePreset(): void {
-  const preset = selectedQuoteRatePreset();
-  if (!preset) {
-    showProjectStatus("Select a rate preset before deleting.", true);
+function confirmQuoteRatePresetDelete(): void {
+  if (!quoteRatePresetDialogState) {
     return;
   }
 
-  if (!window.confirm(`Delete rate preset "${quoteRatePresetDisplayName(preset)}"?`)) {
+  const preset = findQuoteRatePreset(quoteRatePresetLibrary, quoteRatePresetDialogState.presetId);
+  if (!preset) {
+    showProjectStatus("Select a rate preset before deleting.", true);
+    closeQuoteRatePresetDialog();
     return;
   }
 
   const nextLibrary = deleteQuoteRatePreset(quoteRatePresetLibrary, preset.id);
   if (!persistQuoteRatePresetLibrary(nextLibrary)) {
-    showProjectStatus("Could not delete preset in this browser. Existing presets were unchanged.", true);
+    const message = "Could not delete preset in this browser. Existing presets were unchanged.";
+    quoteRatePresetDialogState = {
+      ...quoteRatePresetDialogState,
+      message,
+      isError: true,
+    };
+    renderQuoteRatePresetDialog();
+    focusQuoteRatePresetDialogCancelButton();
+    showProjectStatus(message, true);
     return;
   }
 
   quoteRatePresetLibrary = nextLibrary;
   normalizeSelectedQuoteRatePresetId();
+  quoteRatePresetDialogState = null;
   renderWorkspace();
+  renderQuoteRatePresetDialog();
   showProjectStatus(`Deleted rate preset "${quoteRatePresetDisplayName(preset)}".`);
 }
 

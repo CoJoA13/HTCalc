@@ -2030,6 +2030,7 @@ function currentQuoteReportViewModel(result?: HeatTreatQuoteRecommendation): Quo
   return createQuoteReportViewModel({
     exportedAt: new Date().toISOString(),
     metadata: projectMetadata,
+    unitSystem,
     input,
     recommendation,
     validationChecklist: validationChecklists["heat-treat-rfq"],
@@ -2169,7 +2170,7 @@ function quoteReportHtml(report: QuoteReportViewModel): string {
   const internalNotes = report.recommendation.internalNotes.length > 0
     ? report.recommendation.internalNotes
     : ["No internal quote notes generated."];
-  const perWeight = quotePerWeightDisplay(report.recommendation.pricePerKg, unitSystem);
+  const perWeight = quotePerWeightDisplay(report.recommendation.pricePerKg, report.unitSystem);
 
   return `
     <header class="report-document-header">

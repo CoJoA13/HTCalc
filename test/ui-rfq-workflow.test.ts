@@ -108,6 +108,8 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(clickedDownloadNames.at(-1)).toMatch(/\.md$/);
     expect(markdownText).toContain("# HTCalc Heat-Treat RFQ Report");
     expect(markdownText).toContain("## Quote Summary");
+    expect(markdownText).toContain("Price per lb");
+    expect(markdownText).not.toContain("Price per kg");
 
     document.querySelector<HTMLButtonElement>("#save-project")?.click();
     expect(savedProjectBlob).not.toBeNull();

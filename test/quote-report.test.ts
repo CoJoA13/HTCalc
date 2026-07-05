@@ -5,6 +5,9 @@ import {
   quoteReportMarkdownFilename,
   serializeQuoteReportMarkdown,
 } from "../src/ui/quote-report.js";
+import {
+  quotePerWeightDisplay,
+} from "../src/ui/quote-display.js";
 import type { ValidationChecklistState } from "../src/ui/project-state.js";
 
 const shopRates: HeatTreatQuoteInput["shopRates"] = {
@@ -90,6 +93,7 @@ describe("quote report markdown", () => {
         partName: "Pump bracket",
         notes: "RFQ for heat treatment only.",
       },
+      unitSystem: "metric",
       input,
       recommendation,
       validationChecklist: checklistFromRecommendation(recommendation),
@@ -188,6 +192,7 @@ describe("quote report markdown", () => {
         partName: "",
         notes: "",
       },
+      unitSystem: "metric",
       input: manualQuoteInput,
       recommendation,
       validationChecklist: checklistFromRecommendation(recommendation),
@@ -207,6 +212,49 @@ describe("quote report markdown", () => {
     expect(markdown).toContain("- Manual quote source selected; imported process assumptions are not linked to a recipe.");
   });
 
+  it("serializes imperial RFQ per-weight pricing in pounds", () => {
+    const recommendation = recommendHeatTreatQuote(input);
+    const report = createQuoteReportViewModel({
+      exportedAt: "2026-07-04T00:00:00.000Z",
+      metadata: {
+        customerName: "ACME Castings",
+        partName: "Pump bracket",
+        notes: "",
+      },
+      unitSystem: "imperial",
+      input,
+      recommendation,
+      validationChecklist: checklistFromRecommendation(recommendation),
+    });
+
+    const markdown = serializeQuoteReportMarkdown(report);
+    const perWeight = quotePerWeightDisplay(recommendation.pricePerKg, "imperial");
+
+    expect(markdown).toContain(`Price per lb: $${perWeight.value?.toFixed(2)}`);
+    expect(markdown).not.toContain("Price per kg");
+  });
+
+  it("serializes unavailable imperial RFQ per-weight pricing with the active label", () => {
+    const recommendation = recommendHeatTreatQuote(manualQuoteInput);
+    const report = createQuoteReportViewModel({
+      exportedAt: "2026-07-04T00:00:00.000Z",
+      metadata: {
+        customerName: "",
+        partName: "",
+        notes: "",
+      },
+      unitSystem: "imperial",
+      input: manualQuoteInput,
+      recommendation,
+      validationChecklist: checklistFromRecommendation(recommendation),
+    });
+
+    const markdown = serializeQuoteReportMarkdown(report);
+
+    expect(markdown).toContain("Price per lb: Unavailable");
+    expect(markdown).not.toContain("Price per kg");
+  });
+
   it("serializes checked RFQ validation checklist state and notes", () => {
     const recommendation = recommendHeatTreatQuote(input);
     const report = createQuoteReportViewModel({
@@ -216,6 +264,7 @@ describe("quote report markdown", () => {
         partName: "Pump bracket",
         notes: "",
       },
+      unitSystem: "metric",
       input,
       recommendation,
       validationChecklist: {

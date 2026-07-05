@@ -195,6 +195,37 @@ describe("Heat-Treat RFQ UI workflow", () => {
     expect(recommendationText()).toContain("Heat-Treat RFQ");
   });
 
+  it("shows custom RFQ rates when current shop rates differ from the selected preset", async () => {
+    vi.spyOn(window, "prompt").mockReturnValue("Dirty RFQ");
+    await import("../src/ui/main.js");
+
+    clickMode("heat-treat-rfq");
+    setQuoteNumber("shopRates.minimumLotCharge", "500");
+    setQuoteNumber("shopRates.setupAdminCharge", "100");
+    setQuoteNumber("shopRates.laborRatePerHour", "90");
+    setQuoteNumber("shopRates.furnaceRatePerHour", "125");
+    setQuoteNumber("shopRates.bathQuenchRatePerHour", "95");
+    setQuoteNumber("shopRates.temperFurnaceRatePerHour", "80");
+    setQuoteNumber("shopRates.inspectionBaseCharge", "60");
+    setQuoteNumber("shopRates.consumablesPerKg", "0.55");
+    setQuoteNumber("shopRates.handlingPackagingCharge", "30");
+    setQuoteNumber("shopRates.overheadPercent", "18");
+    setQuoteNumber("shopRates.targetMarginPercent", "22");
+
+    clickRatePresetAction("save");
+    clickRatePresetAction("apply");
+
+    expect(quoteAccordionStatusText("rates")).toContain("Dirty RFQ");
+    expect(quoteReviewReadinessText()).toContain("Dirty RFQ");
+
+    setQuoteNumber("shopRates.furnaceRatePerHour", "130");
+
+    expect(quoteAccordionStatusText("rates")).not.toContain("Dirty RFQ");
+    expect(quoteAccordionStatusText("rates")).toContain("Custom rates");
+    expect(quoteReviewReadinessText()).not.toContain("Dirty RFQ");
+    expect(quoteReviewReadinessText()).toContain("Custom rates");
+  });
+
   it("deletes RFQ shop-rate presets without changing current quote rates", async () => {
     vi.spyOn(window, "prompt").mockReturnValue("Delete Me RFQ");
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -452,6 +483,12 @@ function quoteAccordionText(section: QuoteAccordionSection): string {
   const container = document.querySelector<HTMLElement>(`[data-quote-accordion-section="${section}"]`);
   expect(container).not.toBeNull();
   return compactText(container!.textContent ?? "");
+}
+
+function quoteAccordionStatusText(section: QuoteAccordionSection): string {
+  const status = document.querySelector<HTMLElement>(`[data-quote-accordion-status="${section}"]`);
+  expect(status).not.toBeNull();
+  return compactText(status!.textContent ?? "");
 }
 
 function quoteReviewReadinessText(): string {

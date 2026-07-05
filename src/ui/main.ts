@@ -570,8 +570,9 @@ function quoteWorkspace(): string {
   const input = quoteWorkspaceInput();
   normalizeSelectedQuoteRatePresetId();
   const selectedPreset = selectedQuoteRatePreset();
-  const readiness = quoteReviewReadiness(input, selectedPreset);
-  const statuses = quoteAccordionStatusMap(input, selectedPreset, readiness);
+  const activePreset = activeQuoteRatePreset(input);
+  const readiness = quoteReviewReadiness(input, activePreset);
+  const statuses = quoteAccordionStatusMap(input, selectedPreset, activePreset, readiness);
 
   return `
     <section class="input-pane" aria-label="Heat-treat RFQ inputs">
@@ -761,12 +762,13 @@ function quoteReviewReadiness(input: HeatTreatQuoteInput, selectedPreset: QuoteR
 function quoteAccordionStatusMap(
   input: HeatTreatQuoteInput,
   selectedPreset: QuoteRatePreset | undefined,
+  activePreset: QuoteRatePreset | undefined,
   readiness: QuoteReviewReadiness,
 ): Record<QuoteAccordionSectionId, string> {
   return {
     source: input.sourceMode === "manual" ? "Manual" : "Imported",
     lot: input.lot.cycleCountOverride !== undefined ? "Cycle override" : "6 fields",
-    rates: selectedPreset ? quoteRatePresetDisplayName(selectedPreset) : "No preset",
+    rates: activePreset ? quoteRatePresetDisplayName(activePreset) : selectedPreset ? "Custom rates" : "No preset",
     adjustments: quoteHasActiveOverridesOrAdjustments(input) ? "Overrides active" : "Optional",
     review: readiness.status,
   };
@@ -1159,9 +1161,10 @@ function bindQuoteAccordionControls(): void {
 
 function refreshQuoteAccordionSummary(): void {
   const input = quoteWorkspaceInput();
-  const preset = selectedQuoteRatePreset();
-  const readiness = quoteReviewReadiness(input, preset);
-  const statuses = quoteAccordionStatusMap(input, preset, readiness);
+  const selectedPreset = selectedQuoteRatePreset();
+  const activePreset = activeQuoteRatePreset(input);
+  const readiness = quoteReviewReadiness(input, activePreset);
+  const statuses = quoteAccordionStatusMap(input, selectedPreset, activePreset, readiness);
 
   for (const [sectionId, status] of Object.entries(statuses) as Array<[QuoteAccordionSectionId, string]>) {
     const statusEl = document.querySelector<HTMLElement>(`[data-quote-accordion-status="${sectionId}"]`);
@@ -1207,6 +1210,27 @@ function bindQuoteRatePresetControls(): void {
 
 function selectedQuoteRatePreset(): QuoteRatePreset | undefined {
   return findQuoteRatePreset(quoteRatePresetLibrary, selectedQuoteRatePresetId);
+}
+
+function activeQuoteRatePreset(input: HeatTreatQuoteInput): QuoteRatePreset | undefined {
+  const preset = selectedQuoteRatePreset();
+  return preset && quoteRatePresetMatchesShopRates(preset, input.shopRates) ? preset : undefined;
+}
+
+function quoteRatePresetMatchesShopRates(preset: QuoteRatePreset, shopRates: HeatTreatShopRates): boolean {
+  return (
+    preset.shopRates.minimumLotCharge === shopRates.minimumLotCharge &&
+    preset.shopRates.setupAdminCharge === shopRates.setupAdminCharge &&
+    preset.shopRates.laborRatePerHour === shopRates.laborRatePerHour &&
+    preset.shopRates.furnaceRatePerHour === shopRates.furnaceRatePerHour &&
+    preset.shopRates.bathQuenchRatePerHour === shopRates.bathQuenchRatePerHour &&
+    preset.shopRates.temperFurnaceRatePerHour === shopRates.temperFurnaceRatePerHour &&
+    preset.shopRates.inspectionBaseCharge === shopRates.inspectionBaseCharge &&
+    preset.shopRates.consumablesPerKg === shopRates.consumablesPerKg &&
+    preset.shopRates.handlingPackagingCharge === shopRates.handlingPackagingCharge &&
+    preset.shopRates.overheadPercent === shopRates.overheadPercent &&
+    preset.shopRates.targetMarginPercent === shopRates.targetMarginPercent
+  );
 }
 
 function applySelectedQuoteRatePreset(): void {
